@@ -1,12 +1,9 @@
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
-pub enum TokenKind<'a> {
+pub enum Token<'a> {
     Identifier(&'a str),
     Literal(LiteralKind),
-    // Int(i64),
-    // Float(f64),
-    // Bool(bool),
     Plus,
     Minus,
     Star,
@@ -39,38 +36,38 @@ pub enum LiteralKind {
     Float(f64),
 }
 
-impl fmt::Display for TokenKind<'_> {
+impl fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TokenKind::Identifier(s) => write!(f, "{}", s),
-            TokenKind::Literal(kind) => match kind {
+            Token::Identifier(s) => write!(f, "{}", s),
+            Token::Literal(kind) => match kind {
                 LiteralKind::Bool(b) => write!(f, "{}", b),
                 LiteralKind::Integer(n) => write!(f, "{}", n),
                 LiteralKind::Float(n) => write!(f, "{}", n),
             },
-            TokenKind::Plus => write!(f, "+"),
-            TokenKind::Minus => write!(f, "-"),
-            TokenKind::Star => write!(f, "*"),
-            TokenKind::Slash => write!(f, "/"),
-            TokenKind::Percent => write!(f, "%"),
-            TokenKind::Bang => write!(f, "!"),
-            TokenKind::Comma => write!(f, ","),
-            TokenKind::Eq => write!(f, "="),
-            TokenKind::Lt => write!(f, "<"),
-            TokenKind::Gt => write!(f, ">"),
-            TokenKind::LtEq => write!(f, "<="),
-            TokenKind::GtEq => write!(f, ">="),
-            TokenKind::EqEq => write!(f, "=="),
-            TokenKind::Ne => write!(f, "!="),
-            TokenKind::OrOr => write!(f, "||"),
-            TokenKind::AndAnd => write!(f, "&&"),
-            TokenKind::OpenParen => write!(f, "("),
-            TokenKind::CloseParen => write!(f, ")"),
-            TokenKind::OpenBracket => write!(f, "["),
-            TokenKind::CloseBracket => write!(f, "]"),
-            TokenKind::Or => write!(f, "|"),
-            TokenKind::And => write!(f, "&"),
-            TokenKind::Caret => write!(f, "^"),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Star => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
+            Token::Percent => write!(f, "%"),
+            Token::Bang => write!(f, "!"),
+            Token::Comma => write!(f, ","),
+            Token::Eq => write!(f, "="),
+            Token::Lt => write!(f, "<"),
+            Token::Gt => write!(f, ">"),
+            Token::LtEq => write!(f, "<="),
+            Token::GtEq => write!(f, ">="),
+            Token::EqEq => write!(f, "=="),
+            Token::Ne => write!(f, "!="),
+            Token::OrOr => write!(f, "||"),
+            Token::AndAnd => write!(f, "&&"),
+            Token::OpenParen => write!(f, "("),
+            Token::CloseParen => write!(f, ")"),
+            Token::OpenBracket => write!(f, "["),
+            Token::CloseBracket => write!(f, "]"),
+            Token::Or => write!(f, "|"),
+            Token::And => write!(f, "&"),
+            Token::Caret => write!(f, "^"),
         }
     }
 }

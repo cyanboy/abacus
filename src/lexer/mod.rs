@@ -4,7 +4,7 @@ mod error;
 mod token;
 
 pub use error::LexError;
-pub use token::TokenKind;
+pub use token::Token;
 
 use crate::lexer::token::LiteralKind;
 
@@ -32,7 +32,7 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    fn choose(&mut self, expected: char, a: TokenKind<'a>, b: TokenKind<'a>) -> TokenKind<'a> {
+    fn choose(&mut self, expected: char, a: Token<'a>, b: Token<'a>) -> Token<'a> {
         match self.chars.peek() {
             Some(&(_, c)) if c == expected => {
                 self.chars.next();
@@ -41,36 +41,36 @@ impl<'a> Lexer<'a> {
             _ => b,
         }
     }
-    fn next_token(&mut self) -> Option<Result<TokenKind<'a>, LexError>> {
+    fn next_token(&mut self) -> Option<Result<Token<'a>, LexError>> {
         self.skip_whitespace();
 
         let (pos, ch) = self.chars.next()?;
 
         Some(match ch {
-            '+' => Ok(TokenKind::Plus),
-            '-' => Ok(TokenKind::Minus),
-            '*' => Ok(TokenKind::Star),
-            '/' => Ok(TokenKind::Slash),
-            '%' => Ok(TokenKind::Percent),
-            '^' => Ok(TokenKind::Caret),
-            ',' => Ok(TokenKind::Comma),
-            '(' => Ok(TokenKind::OpenParen),
-            ')' => Ok(TokenKind::CloseParen),
-            '[' => Ok(TokenKind::OpenBracket),
-            ']' => Ok(TokenKind::CloseBracket),
-            '=' => Ok(self.choose('=', TokenKind::EqEq, TokenKind::Eq)),
-            '!' => Ok(self.choose('=', TokenKind::Ne, TokenKind::Bang)),
-            '<' => Ok(self.choose('=', TokenKind::LtEq, TokenKind::Lt)),
-            '>' => Ok(self.choose('=', TokenKind::GtEq, TokenKind::Gt)),
-            '|' => Ok(self.choose('|', TokenKind::OrOr, TokenKind::Or)),
-            '&' => Ok(self.choose('&', TokenKind::AndAnd, TokenKind::And)),
+            '+' => Ok(Token::Plus),
+            '-' => Ok(Token::Minus),
+            '*' => Ok(Token::Star),
+            '/' => Ok(Token::Slash),
+            '%' => Ok(Token::Percent),
+            '^' => Ok(Token::Caret),
+            ',' => Ok(Token::Comma),
+            '(' => Ok(Token::OpenParen),
+            ')' => Ok(Token::CloseParen),
+            '[' => Ok(Token::OpenBracket),
+            ']' => Ok(Token::CloseBracket),
+            '=' => Ok(self.choose('=', Token::EqEq, Token::Eq)),
+            '!' => Ok(self.choose('=', Token::Ne, Token::Bang)),
+            '<' => Ok(self.choose('=', Token::LtEq, Token::Lt)),
+            '>' => Ok(self.choose('=', Token::GtEq, Token::Gt)),
+            '|' => Ok(self.choose('|', Token::OrOr, Token::Or)),
+            '&' => Ok(self.choose('&', Token::AndAnd, Token::And)),
             c if is_ident_start(c) => Ok(self.identifier_or_keyword(pos, ch)),
             c if c.is_ascii_digit() => self.numeric_literal(pos, ch),
             _ => Err(LexError::UnexpectedCharacter { pos, ch }),
         })
     }
 
-    fn numeric_literal(&mut self, start: usize, first: char) -> Result<TokenKind<'a>, LexError> {
+    fn numeric_literal(&mut self, start: usize, first: char) -> Result<Token<'a>, LexError> {
         let mut end = start + first.len_utf8();
         let mut is_decimal = false;
 
@@ -118,16 +118,16 @@ impl<'a> Lexer<'a> {
         let s = &self.s[start..end];
         if is_decimal {
             s.parse()
-                .map(|n| TokenKind::Literal(LiteralKind::Float(n)))
+                .map(|n| Token::Literal(LiteralKind::Float(n)))
                 .map_err(|_| LexError::InvalidNumber { start, end })
         } else {
             s.parse()
-                .map(|n| TokenKind::Literal(LiteralKind::Integer(n)))
+                .map(|n| Token::Literal(LiteralKind::Integer(n)))
                 .map_err(|_| LexError::InvalidNumber { start, end })
         }
     }
 
-    fn identifier_or_keyword(&mut self, start: usize, first: char) -> TokenKind<'a> {
+    fn identifier_or_keyword(&mut self, start: usize, first: char) -> Token<'a> {
         let mut end = start + first.len_utf8();
 
         while let Some(&(idx, c)) = self.chars.peek() {
@@ -140,9 +140,9 @@ impl<'a> Lexer<'a> {
         }
 
         match &self.s[start..end] {
-            "true" => TokenKind::Literal(LiteralKind::Bool(true)),
-            "false" => TokenKind::Literal(LiteralKind::Bool(false)),
-            ident => TokenKind::Identifier(ident),
+            "true" => Token::Literal(LiteralKind::Bool(true)),
+            "false" => Token::Literal(LiteralKind::Bool(false)),
+            ident => Token::Identifier(ident),
         }
     }
 }
@@ -158,7 +158,7 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<TokenKind<'a>, LexError>;
+    type Item = Result<Token<'a>, LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_token()
@@ -169,14 +169,14 @@ impl<'a> Iterator for Lexer<'a> {
 mod tests {
     use super::*;
     use LiteralKind::*;
-    use TokenKind::*;
+    use Token::*;
 
-    fn assert_token(input: &str, expected: TokenKind) {
+    fn assert_token(input: &str, expected: Token) {
         let mut lexer = Lexer::new(input);
         assert_eq!(lexer.next().unwrap().unwrap(), expected);
     }
 
-    fn assert_tokens(input: &str, expected: Vec<TokenKind>) {
+    fn assert_tokens(input: &str, expected: Vec<Token>) {
         let lexer = Lexer::new(input);
         let result: Result<Vec<_>, _> = lexer.collect();
         assert_eq!(result.unwrap(), expected);

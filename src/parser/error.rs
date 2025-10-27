@@ -1,13 +1,13 @@
 use thiserror::Error;
 
-use crate::{LexError, TokenKind};
+use crate::{LexError, Token};
 
 #[derive(Debug, Error)]
 pub enum ParseError<'a> {
     #[error("Unexpected token: expected {expected}, found {found:?}")]
     UnexpectedToken {
-        expected: TokenKind<'a>,
-        found: Option<TokenKind<'a>>,
+        expected: Token<'a>,
+        found: Option<Token<'a>>,
     },
 
     #[error("Unexpected end of input")]
