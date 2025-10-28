@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, Clone, PartialEq)]
 pub enum LexError {
     #[error("Unexpected character '{ch}' at position {pos}")]
     UnexpectedCharacter { pos: usize, ch: char },

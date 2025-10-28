@@ -1,73 +1,108 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token<'a> {
     Identifier(&'a str),
     Literal(LiteralKind),
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percent,
-    Bang,
-    Comma,
-    Caret,
-    Eq,
-    Gt,
-    GtEq,
-    Lt,
-    LtEq,
-    EqEq,
-    Ne,
-    Or,
-    OrOr,
-    And,
-    AndAnd,
-    OpenParen,
-    CloseParen,
-    OpenBracket,
-    CloseBracket,
+    Operator(OperatorKind),
+    Separator(SeparatorKind),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralKind {
     Bool(bool),
     Integer(i64),
     Float(f64),
 }
 
-impl fmt::Display for Token<'_> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum OperatorKind {
+    Assign,  // '='
+    Plus,    // '+'
+    Minus,   // '-'
+    Star,    // '*'
+    Slash,   // '/'
+    Percent, // '%'
+    Bang,    // '!'
+    Caret,   // '^'
+    Eq,      // '=='
+    Gt,      // '>'
+    GtEq,    // '>='
+    Lt,      // '<'
+    LtEq,    // '<='
+    Ne,      // '!='
+    BitOr,   // '|'
+    Or,      // '||'
+    BitAnd,  // '&'
+    And,     // '&&'
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SeparatorKind {
+    Comma,
+    OpenParen,
+    CloseParen,
+    OpenBracket,
+    CloseBracket,
+}
+
+impl fmt::Display for OperatorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use OperatorKind::*;
+        f.write_str(match self {
+            Assign => "=",
+            Plus => "+",
+            Minus => "-",
+            Star => "*",
+            Slash => "/",
+            Percent => "%",
+            Bang => "!",
+            Caret => "^",
+            Eq => "==",
+            Lt => "<",
+            Gt => ">",
+            LtEq => "<=",
+            GtEq => ">=",
+            Ne => "!=",
+            BitOr => "|",
+            Or => "||",
+            BitAnd => "&",
+            And => "&&",
+        })
+    }
+}
+
+impl fmt::Display for SeparatorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use SeparatorKind::*;
+        f.write_str(match self {
+            Comma => ",",
+            OpenParen => "(",
+            CloseParen => ")",
+            OpenBracket => "[",
+            CloseBracket => "]",
+        })
+    }
+}
+
+impl fmt::Display for LiteralKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Identifier(s) => write!(f, "{}", s),
-            Token::Literal(kind) => match kind {
-                LiteralKind::Bool(b) => write!(f, "{}", b),
-                LiteralKind::Integer(n) => write!(f, "{}", n),
-                LiteralKind::Float(n) => write!(f, "{}", n),
-            },
-            Token::Plus => write!(f, "+"),
-            Token::Minus => write!(f, "-"),
-            Token::Star => write!(f, "*"),
-            Token::Slash => write!(f, "/"),
-            Token::Percent => write!(f, "%"),
-            Token::Bang => write!(f, "!"),
-            Token::Comma => write!(f, ","),
-            Token::Eq => write!(f, "="),
-            Token::Lt => write!(f, "<"),
-            Token::Gt => write!(f, ">"),
-            Token::LtEq => write!(f, "<="),
-            Token::GtEq => write!(f, ">="),
-            Token::EqEq => write!(f, "=="),
-            Token::Ne => write!(f, "!="),
-            Token::OrOr => write!(f, "||"),
-            Token::AndAnd => write!(f, "&&"),
-            Token::OpenParen => write!(f, "("),
-            Token::CloseParen => write!(f, ")"),
-            Token::OpenBracket => write!(f, "["),
-            Token::CloseBracket => write!(f, "]"),
-            Token::Or => write!(f, "|"),
-            Token::And => write!(f, "&"),
-            Token::Caret => write!(f, "^"),
+            LiteralKind::Bool(b) => write!(f, "{b}"),
+            LiteralKind::Integer(n) => write!(f, "{n}"),
+            LiteralKind::Float(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+impl fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Token::*;
+        match self {
+            Identifier(s) => write!(f, "{s}"),
+            Literal(kind) => write!(f, "{kind}"),
+            Operator(kind) => write!(f, "{kind}"),
+            Separator(kind) => write!(f, "{kind}"),
         }
     }
 }

@@ -1,7 +1,8 @@
 [package]
-name = "programming-language"
+name = "abacus"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rustyline = "17.0.2"
 thiserror = "2.0.17"

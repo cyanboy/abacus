@@ -1,69 +1,74 @@
-#[derive(Debug, PartialEq)]
-pub enum Statement<'a> {
-    Assignment {
-        name: &'a str,
-        value: Expression<'a>,
-    },
-    FunctionDefinition {
-        name: &'a str,
-        params: Vec<Pattern<'a>>,
-        body: Expression<'a>,
-    },
-    Expression(Expression<'a>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Expression<'a> {
-    Identifier(&'a str),
-    Int(i32),
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Int(i64),
+    Float(f64),
     Bool(bool),
-    BinaryOp {
-        left: Box<Expression<'a>>,
-        op: BinaryOperator,
-        right: Box<Expression<'a>>,
-    },
-    UnaryOp {
-        op: UnaryOperator,
-        operand: Box<Expression<'a>>,
-    },
-    FunctionCall {
-        name: &'a str,
-        args: Vec<Expression<'a>>,
-    },
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Pattern<'a> {
-    Identifier(&'a str),
-    Int(i32),
-    Bool(bool),
-    Wildcard,
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Assignment { name: String, value: Expr },
+    FunctionDefinition { name: String, arms: Vec<FuncArm> },
+    Expression(Expr),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum BinaryOperator {
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    Lit(Literal),
+    Identifier(String),
+    Unary {
+        op: UnaryOp,
+        rhs: Box<Expr>,
+    },
+    Binary {
+        lhs: Box<Expr>,
+        op: BinOp,
+        rhs: Box<Expr>,
+    },
+    Call {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    Group(Box<Expr>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinOp {
+    Assign,
+    And,
+    BitAnd,
+    Or,
+    BitOr,
+    Eq,
+    Ne,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    Xor,
     Add,
     Sub,
     Mul,
     Div,
     Mod,
-    BitAnd,
-    BitOr,
-    BitXor,
-    And,
-    Or,
-    Eq,
-    NotEq,
-    Lt,
-    Gt,
-    LtEq,
-    GtEq,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum UnaryOperator {
-    Not,
-    Negate,
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Identifier(String),
+    Lit(Literal),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncArm {
+    pub params: Vec<Pattern>,
+    pub body: Expr,
 }
 
 #[cfg(test)]

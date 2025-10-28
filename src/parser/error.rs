@@ -1,12 +1,12 @@
 use thiserror::Error;
 
-use crate::{LexError, Token};
+use crate::lexer::{error::LexError, token::Token};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ParseError<'a> {
     #[error("Unexpected token: expected {expected}, found {found:?}")]
     UnexpectedToken {
-        expected: Token<'a>,
+        expected: String,
         found: Option<Token<'a>>,
     },
 
