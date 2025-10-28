@@ -76,7 +76,6 @@ impl Env {
         self.scopes.pop();
     }
 
-    // ------------ public API ------------
     pub fn eval_stmt(&mut self, s: &Stmt) -> Result<Option<Value>, EvalError> {
         match s {
             Stmt::Assignment { name, value } => {

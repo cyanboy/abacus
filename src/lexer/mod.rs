@@ -4,9 +4,7 @@ pub mod error;
 pub mod token;
 
 use error::LexError;
-use token::{LiteralKind::*, OperatorKind::*, SeparatorKind::*, Token, Token::*};
-
-use token::OperatorKind;
+use token::{Token, Token::*};
 
 /// Streaming, zero-allocation lexer over `&str`.
 /// Emits `Result<Token, LexError>` and implements `Iterator`.
@@ -36,13 +34,13 @@ impl<'a> Lexer<'a> {
     /// If the next char equals `expected`, return operator `a` and consume it;
     /// otherwise return single-char operator `b` without consuming `expected`.
     #[inline]
-    fn choose(&mut self, expected: char, a: OperatorKind, b: OperatorKind) -> Token<'a> {
+    fn choose(&mut self, expected: char, a: Token<'a>, b: Token<'a>) -> Token<'a> {
         match self.chars.peek() {
             Some(&(_, c)) if c == expected => {
                 self.chars.next();
-                Operator(a)
+                a
             }
-            _ => Operator(b),
+            _ => b,
         }
     }
 
@@ -55,17 +53,17 @@ impl<'a> Lexer<'a> {
 
         Some(match ch {
             // Single-char operators and separators
-            '+' => Ok(Operator(Plus)),
-            '-' => Ok(Operator(Minus)),
-            '*' => Ok(Operator(Star)),
-            '/' => Ok(Operator(Slash)),
-            '%' => Ok(Operator(Percent)),
-            '^' => Ok(Operator(Caret)),
-            ',' => Ok(Separator(Comma)),
-            '(' => Ok(Separator(OpenParen)),
-            ')' => Ok(Separator(CloseParen)),
-            '[' => Ok(Separator(OpenBracket)),
-            ']' => Ok(Separator(CloseBracket)),
+            '+' => Ok(Plus),
+            '-' => Ok(Minus),
+            '*' => Ok(Star),
+            '/' => Ok(Slash),
+            '%' => Ok(Percent),
+            '^' => Ok(Caret),
+            ',' => Ok(Comma),
+            '(' => Ok(OpenParen),
+            ')' => Ok(CloseParen),
+            '[' => Ok(OpenBracket),
+            ']' => Ok(CloseBracket),
 
             // Two-char or fallback to single-char operators
             '=' => Ok(self.choose('=', Eq, Assign)),
@@ -144,11 +142,11 @@ impl<'a> Lexer<'a> {
         let s = &self.s[start..end];
         if is_decimal {
             s.parse()
-                .map(|n| Literal(Float(n)))
+                .map(Float)
                 .map_err(|_| LexError::InvalidNumber { start, end })
         } else {
             s.parse()
-                .map(|n| Literal(Integer(n)))
+                .map(Integer)
                 .map_err(|_| LexError::InvalidNumber { start, end })
         }
     }
@@ -168,8 +166,8 @@ impl<'a> Lexer<'a> {
         }
 
         match &self.s[start..end] {
-            "true" => Literal(Bool(true)),
-            "false" => Literal(Bool(false)),
+            "true" => Bool(true),
+            "false" => Bool(false),
             ident => Token::Identifier(ident),
         }
     }
@@ -217,23 +215,23 @@ mod tests {
     fn test_single_tokens() {
         // Single-char operators and separators
         let cases = [
-            ("+", Operator(Plus)),
-            ("-", Operator(Minus)),
-            ("*", Operator(Star)),
-            ("/", Operator(Slash)),
-            ("%", Operator(Percent)),
-            ("=", Operator(Assign)),
-            ("<", Operator(Lt)),
-            (">", Operator(Gt)),
-            ("!", Operator(Bang)),
-            ("|", Operator(BitOr)),
-            ("&", Operator(BitAnd)),
-            ("^", Operator(Caret)),
-            ("(", Separator(OpenParen)),
-            (")", Separator(CloseParen)),
-            ("[", Separator(OpenBracket)),
-            ("]", Separator(CloseBracket)),
-            (",", Separator(Comma)),
+            ("+", Plus),
+            ("-", Minus),
+            ("*", Star),
+            ("/", Slash),
+            ("%", Percent),
+            ("=", Assign),
+            ("<", Lt),
+            (">", Gt),
+            ("!", Bang),
+            ("|", BitOr),
+            ("&", BitAnd),
+            ("^", Caret),
+            ("(", OpenParen),
+            (")", CloseParen),
+            ("[", OpenBracket),
+            ("]", CloseBracket),
+            (",", Comma),
         ];
 
         for (input, expected) in cases {
@@ -245,12 +243,12 @@ mod tests {
     fn test_double_tokens() {
         // Paired operators recognized via `choose`
         let cases = [
-            ("==", Operator(Eq)),
-            ("!=", Operator(Ne)),
-            ("<=", Operator(LtEq)),
-            (">=", Operator(GtEq)),
-            ("&&", Operator(And)),
-            ("||", Operator(Or)),
+            ("==", Eq),
+            ("!=", Ne),
+            ("<=", LtEq),
+            (">=", GtEq),
+            ("&&", And),
+            ("||", Or),
         ];
 
         for (input, expected) in cases {
@@ -277,10 +275,10 @@ mod tests {
     #[test]
     fn test_integers() {
         let cases = [
-            ("0", Literal(Integer(0))),
-            ("1", Literal(Integer(1))),
-            ("42", Literal(Integer(42))),
-            ("123", Literal(Integer(123))),
+            ("0", Integer(0)),
+            ("1", Integer(1)),
+            ("42", Integer(42)),
+            ("123", Integer(123)),
         ];
 
         for (input, expected) in cases {
@@ -292,10 +290,10 @@ mod tests {
     fn test_floats() {
         // Includes trailing-dot and scientific notation
         let cases = [
-            ("0.1", Literal(Float(0.1))),
-            ("13.0", Literal(Float(13.0))),
-            ("1.", Literal(Float(1.))),
-            ("1.2e-3", Literal(Float(1.2e-3))),
+            ("0.1", Float(0.1)),
+            ("13.0", Float(13.0)),
+            ("1.", Float(1.)),
+            ("1.2e-3", Float(1.2e-3)),
         ];
 
         for (input, expected) in cases {
@@ -305,8 +303,8 @@ mod tests {
 
     #[test]
     fn test_booleans() {
-        assert_token("true", Literal(Bool(true)));
-        assert_token("false", Literal(Bool(false)));
+        assert_token("true", Bool(true));
+        assert_token("false", Bool(false));
     }
 
     #[test]
@@ -322,22 +320,19 @@ mod tests {
             "x+1+1.2e10-42",
             vec![
                 Identifier("x"),
-                Operator(Plus),
-                Literal(Integer(1)),
-                Operator(Plus),
-                Literal(Float(1.2e10)),
-                Operator(Minus),
-                Literal(Integer(42)),
+                Plus,
+                Integer(1),
+                Plus,
+                Float(1.2e10),
+                Minus,
+                Integer(42),
             ],
         );
     }
 
     #[test]
     fn test_whitespace() {
-        assert_tokens(
-            " 2  +  2  ",
-            vec![Literal(Integer(2)), Operator(Plus), Literal(Integer(2))],
-        );
+        assert_tokens(" 2  +  2  ", vec![Integer(2), Plus, Integer(2)]);
     }
 
     #[test]
