@@ -6,7 +6,7 @@ pub mod token;
 use error::LexError;
 use token::{LiteralKind::*, OperatorKind::*, SeparatorKind::*, Token, Token::*};
 
-use crate::lexer::token::OperatorKind;
+use token::OperatorKind;
 
 /// Streaming, zero-allocation lexer over `&str`.
 /// Emits `Result<Token, LexError>` and implements `Iterator`.
