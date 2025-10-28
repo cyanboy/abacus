@@ -1,11 +1,11 @@
 use abacus::{eval::Env, lexer::Lexer, parser::Parser};
 use rustyline::DefaultEditor;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     println!("Abacus - Calculator REPL");
     println!("Type expressions or 'quit' to exit\n");
 
-    let mut rl = DefaultEditor::new()?;
+    let mut rl = DefaultEditor::new().unwrap();
 
     let mut env = Env::new();
 
@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if input.is_empty() {
                     continue;
                 }
-                rl.add_history_entry(input)?;
+                rl.add_history_entry(input).unwrap();
 
                 if line == "quit" || line == "exit" {
                     println!("Goodbye!");
@@ -39,6 +39,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
-    Ok(())
 }
