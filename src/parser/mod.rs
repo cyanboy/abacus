@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use crate::lexer::{
     Lexer,
-    token::{Token, TokenKind},
+    token::{Span, Token, TokenKind},
 };
 
 pub mod ast;
@@ -67,22 +67,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_token(&mut self, expected: TokenKind<'a>) -> Result<Token<'a>, ParseError<'a>> {
+        let expected_str = expected.to_string();
+        match self.bump()? {
+            Some(tok) if tok.kind == expected => Ok(tok),
+            Some(tok) => Err(ParseError::UnexpectedToken {
+                expected: expected_str,
+                found: Some(tok.kind),
+                span: Some(tok.span).into(),
+            }),
+            None => Err(ParseError::UnexpectedToken {
+                expected: expected_str,
+                found: None,
+                span: None.into(),
+            }),
+        }
+    }
+
     /// Require the next token to be `expected`. Error otherwise.
     fn expect(&mut self, expected: TokenKind<'a>) -> Result<(), ParseError<'a>> {
-        match self.bump()? {
-            Some(t) if t.kind == expected => Ok(()),
-            found => {
-                let (tok, span): (Option<_>, SpanLabel) = match found {
-                    Some(sp) => (Some(sp.kind), Some(sp.span).into()),
-                    None => (None, None.into()),
-                };
-                Err(ParseError::UnexpectedToken {
-                    expected: expected.to_string(),
-                    found: tok,
-                    span,
-                })
-            }
-        }
+        self.expect_token(expected)?;
+        Ok(())
     }
 
     /// stmt := func_def | assignment | expr
@@ -101,7 +106,7 @@ impl<'a> Parser<'a> {
     /// - otherwise treat the identifier as the start of an expression
     fn parse_stmt_starting_with_ident(&mut self) -> Result<Stmt, ParseError<'a>> {
         // consume the leading name
-        let (name, _name_span) = match self.bump()? {
+        let (name, name_span) = match self.bump()? {
             Some(sp) => match sp.kind {
                 TokenKind::Identifier(s) => (s.to_string(), sp.span),
                 other => {
@@ -142,7 +147,7 @@ impl<'a> Parser<'a> {
         }
 
         // Otherwise it's an expression that began with an identifier.
-        let lhs = Expr::Identifier(name);
+        let lhs = Expr::Identifier(name, name_span);
         Ok(Stmt::Expression(self.parse_expr_bp_with_lhs(lhs, 0)?))
     }
 
@@ -193,61 +198,31 @@ impl<'a> Parser<'a> {
     /// - postfix call: `expr(args...)`
     /// - binary ops with precedence/associativity from `infix_bp`
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError<'a>> {
-        // Parse prefix or primary.
-        let mut lhs = if let Some(op) = self.peek()?.and_then(|t| prefix_op(&t.kind)) {
-            // consume unary op, then parse a tightly-binding RHS
-            self.bump()?;
-            let rhs = self.parse_expr_bp(PREFIX_BP)?;
-            Expr::Unary {
-                op,
-                rhs: Box::new(rhs),
+        let lhs = if let Some(tok) = self.peek()? {
+            if let Some(op) = prefix_op(&tok.kind) {
+                let op_tok = match self.bump()? {
+                    Some(tok) => tok,
+                    None => unreachable!("prefix operator vanished after peek"),
+                };
+                let rhs = self.parse_expr_bp(PREFIX_BP)?;
+                let span = span_cover(op_tok.span, rhs.span());
+                Expr::Unary {
+                    op,
+                    span,
+                    rhs: Box::new(rhs),
+                }
+            } else {
+                self.parse_primary()?
             }
         } else {
-            self.parse_primary()?
+            return Err(ParseError::UnexpectedToken {
+                expected: "expression".to_string(),
+                found: None,
+                span: None.into(),
+            });
         };
 
-        // Loop for postfix and infix operators.
-        loop {
-            // Postfix call has highest precedence.
-            if self.eat(TokenKind::OpenParen)? {
-                let mut args = Vec::new();
-                if !self.eat(TokenKind::CloseParen)? {
-                    loop {
-                        args.push(self.parse_expr_bp(0)?);
-                        if self.eat(TokenKind::Comma)? {
-                            continue;
-                        }
-                        self.expect(TokenKind::CloseParen)?;
-                        break;
-                    }
-                }
-                lhs = Expr::Call {
-                    callee: Box::new(lhs),
-                    args,
-                };
-                continue;
-            }
-
-            // Decide next binary operator and its binding powers.
-            let (op, lbp, rbp) = match self.peek()?.and_then(|t| infix_bp(&t.kind)) {
-                Some(x) => x,
-                None => break,
-            };
-            if lbp < min_bp {
-                break;
-            }
-
-            // Consume operator and parse the RHS at `rbp`.
-            self.bump()?;
-            let rhs = self.parse_expr_bp(rbp)?;
-            lhs = Expr::Binary {
-                lhs: Box::new(lhs),
-                op,
-                rhs: Box::new(rhs),
-            };
-        }
-
-        Ok(lhs)
+        self.parse_expr_bp_with_lhs(lhs, min_bp)
     }
 
     /// Continue Pratt parsing when the caller already parsed an initial `lhs`.
@@ -258,84 +233,107 @@ impl<'a> Parser<'a> {
     ) -> Result<Expr, ParseError<'a>> {
         loop {
             // Postfix call
-            if self.eat(TokenKind::OpenParen)? {
+            if matches!(self.peek()?, Some(tok) if tok.kind == TokenKind::OpenParen) {
+                let open_tok = match self.bump()? {
+                    Some(tok) => tok,
+                    None => unreachable!("open paren vanished after peek"),
+                };
                 let mut args = Vec::new();
-                if !self.eat(TokenKind::CloseParen)? {
+                let close_tok = if matches!(self.peek()?, Some(tok) if tok.kind == TokenKind::CloseParen)
+                {
+                    match self.bump()? {
+                        Some(tok) => tok,
+                        None => unreachable!("close paren expected"),
+                    }
+                } else {
                     loop {
                         args.push(self.parse_expr_bp(0)?);
-                        if self.eat(TokenKind::Comma)? {
+                        if matches!(self.peek()?, Some(tok) if tok.kind == TokenKind::Comma) {
+                            self.bump()?;
                             continue;
                         }
-                        self.expect(TokenKind::CloseParen)?;
                         break;
                     }
-                }
+                    self.expect_token(TokenKind::CloseParen)?
+                };
+                let callee_expr = lhs;
+                let call_span = span_cover(callee_expr.span(), open_tok.span);
+                let span = span_cover(call_span, close_tok.span);
                 lhs = Expr::Call {
-                    callee: Box::new(lhs),
+                    callee: Box::new(callee_expr),
                     args,
+                    span,
                 };
                 continue;
             }
 
-            // Infix
-            let (op, lbp, rbp) = match self.peek()?.and_then(|t| infix_bp(&t.kind)) {
-                Some(x) => x,
+            let (op, lbp, rbp, op_span) = match self.peek()? {
+                Some(tok) => match infix_bp(&tok.kind) {
+                    Some((op, lbp, rbp)) => (op, lbp, rbp, tok.span),
+                    None => break,
+                },
                 None => break,
             };
+
             if lbp < min_bp {
                 break;
             }
 
             self.bump()?;
             let rhs = self.parse_expr_bp(rbp)?;
+            let span = span_cover(lhs.span(), span_cover(op_span, rhs.span()));
+            let left = lhs;
             lhs = Expr::Binary {
-                lhs: Box::new(lhs),
+                lhs: Box::new(left),
                 op,
+                span,
                 rhs: Box::new(rhs),
             };
         }
+
         Ok(lhs)
     }
 
     /// primary := literal | identifier | '(' expr ')'
     fn parse_primary(&mut self) -> Result<Expr, ParseError<'a>> {
-        Ok(match self.bump()? {
+        match self.bump()? {
             Some(Token {
                 kind: TokenKind::Integer(n),
-                ..
-            }) => Expr::Lit(Literal::Int(n)),
+                span,
+            }) => Ok(Expr::Lit(Literal::Int(n), span)),
             Some(Token {
                 kind: TokenKind::Float(x),
-                ..
-            }) => Expr::Lit(Literal::Float(x)),
+                span,
+            }) => Ok(Expr::Lit(Literal::Float(x), span)),
             Some(Token {
                 kind: TokenKind::Bool(b),
-                ..
-            }) => Expr::Lit(Literal::Bool(b)),
+                span,
+            }) => Ok(Expr::Lit(Literal::Bool(b), span)),
             Some(Token {
                 kind: TokenKind::Identifier(s),
-                ..
-            }) => Expr::Identifier(s.to_string()),
+                span,
+            }) => Ok(Expr::Identifier(s.to_string(), span)),
             Some(Token {
                 kind: TokenKind::OpenParen,
-                ..
+                span: open_span,
             }) => {
-                let e = self.parse_expr_bp(0)?;
-                self.expect(TokenKind::CloseParen)?;
-                Expr::Group(Box::new(e))
+                let expr = self.parse_expr_bp(0)?;
+                let close_tok = self.expect_token(TokenKind::CloseParen)?;
+                let span = span_cover(open_span, close_tok.span);
+                Ok(Expr::Group(Box::new(expr), span))
             }
             found => {
                 let (tok, span): (Option<_>, SpanLabel) = match found {
                     Some(t) => (Some(t.kind), Some(t.span).into()),
                     None => (None, None.into()),
                 };
-                return Err(ParseError::UnexpectedToken {
+                Err(ParseError::UnexpectedToken {
                     expected: "expression".to_string(),
                     found: tok,
                     span,
-                });
+                })
             }
-        })
+        }
     }
 
     /// Lookahead from after an identifier:
@@ -382,6 +380,10 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn span_cover(a: Span, b: Span) -> Span {
+    Span::new(a.start.min(b.start), a.end.max(b.end))
+}
+
 /// Binding power for prefix operators. Must bind tighter than `* / %`.
 const PREFIX_BP: u8 = 100;
 
@@ -398,26 +400,17 @@ fn prefix_op(tok: &TokenKind) -> Option<UnaryOp> {
 /// Left-associative operators use `rbp = lbp + 1`.
 fn infix_bp(tok: &TokenKind) -> Option<(BinOp, u8, u8)> {
     use BinOp::*;
-    let la = |op, p| Some((op, p, p + 1));
 
     match tok {
-        TokenKind::Star => la(Mul, 90),
-        TokenKind::Slash => la(Div, 90),
-        TokenKind::Percent => la(Mod, 90),
-        TokenKind::Plus => la(Add, 80),
-        TokenKind::Minus => la(Sub, 80),
-        TokenKind::Caret => la(Xor, 70),
-        TokenKind::BitAnd => la(BitAnd, 65),
-        TokenKind::BitOr => la(BitOr, 60),
-        TokenKind::Eq => la(Eq, 50),
-        TokenKind::Ne => la(Ne, 50),
-        TokenKind::Lt => la(Lt, 50),
-        TokenKind::LtEq => la(LtEq, 50),
-        TokenKind::Gt => la(Gt, 50),
-        TokenKind::GtEq => la(GtEq, 50),
-        TokenKind::And => la(And, 40),
-        TokenKind::Or => la(Or, 30),
-
+        TokenKind::Or => Some((Or, 1, 2)),
+        TokenKind::And => Some((And, 2, 3)),
+        TokenKind::BitOr => Some((BitOr, 3, 4)),
+        TokenKind::BitAnd => Some((BitAnd, 4, 5)),
+        TokenKind::Caret => Some((Xor, 5, 6)),
+        TokenKind::Eq | TokenKind::Ne => Some((Eq, 6, 7)), // adjust as needed per op
+        TokenKind::Lt | TokenKind::LtEq | TokenKind::Gt | TokenKind::GtEq => Some((Lt, 7, 8)),
+        TokenKind::Plus | TokenKind::Minus => Some((Add, 8, 9)),
+        TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((Mul, 9, 10)),
         _ => None,
     }
 }
@@ -437,34 +430,34 @@ mod tests {
     fn parses_binary_precedence() {
         let stmt = parse("1 + 2 * 3").unwrap();
 
-        let Expr::Binary { lhs, op, rhs } = expect_expr(stmt) else {
+        let Expr::Binary { lhs, op, span, rhs } = expect_expr(stmt) else {
             panic!("expected binary expression");
         };
         assert_eq!(op, BinOp::Add);
-        assert_eq!(
-            *lhs,
-            Expr::Lit(Literal::Int(1)),
-            "left operand should be literal 1"
-        );
+        assert_eq!(span, Span::new(0, 9));
+        let Expr::Lit(Literal::Int(1), lhs_span) = *lhs else {
+            panic!("left operand should be literal 1");
+        };
+        assert_eq!(lhs_span, Span::new(0, 1));
         let Expr::Binary {
             lhs: mul_lhs,
             op: mul_op,
+            span: mul_span,
             rhs: mul_rhs,
         } = *rhs
         else {
             panic!("expected multiplication on the right");
         };
         assert_eq!(mul_op, BinOp::Mul);
-        assert_eq!(
-            *mul_lhs,
-            Expr::Lit(Literal::Int(2)),
-            "left operand of multiplication should be 2"
-        );
-        assert_eq!(
-            *mul_rhs,
-            Expr::Lit(Literal::Int(3)),
-            "right operand of multiplication should be 3"
-        );
+        assert_eq!(mul_span, Span::new(4, 9));
+        let Expr::Lit(Literal::Int(2), lhs_mul_span) = *mul_lhs else {
+            panic!("left operand of multiplication should be 2");
+        };
+        assert_eq!(lhs_mul_span, Span::new(4, 5));
+        let Expr::Lit(Literal::Int(3), rhs_mul_span) = *mul_rhs else {
+            panic!("right operand of multiplication should be 3");
+        };
+        assert_eq!(rhs_mul_span, Span::new(8, 9));
     }
 
     #[test]
@@ -475,11 +468,10 @@ mod tests {
             panic!("expected assignment statement");
         };
         assert_eq!(name, "answer");
-        assert_eq!(
-            value,
-            Expr::Lit(Literal::Int(42)),
-            "assignment value should parse as literal 42"
-        );
+        let Expr::Lit(Literal::Int(42), span) = value else {
+            panic!("assignment value should be literal 42");
+        };
+        assert_eq!(span, Span::new(9, 11));
     }
 
     #[test]
@@ -499,11 +491,11 @@ mod tests {
                 Pattern::Lit(Literal::Int(1)),
             ]
         );
-        assert_eq!(
-            body,
-            Expr::Identifier("x".into()),
-            "function body should be identifier `x`"
-        );
+        let Expr::Identifier(name, span) = body else {
+            panic!("function body should be identifier `x`");
+        };
+        assert_eq!(name, "x");
+        assert_eq!(span, Span::new(10, 11));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use miette::{NamedSource, Report};
 use rustyline::DefaultEditor;
 
 mod eval;
@@ -33,9 +34,17 @@ fn main() {
                     Ok(stmt) => match env.eval_stmt(&stmt) {
                         Ok(Some(v)) => println!("{v}"),
                         Ok(None) => {}
-                        Err(e) => eprintln!("eval error: {e}"),
+                        Err(e) => {
+                            let report = Report::new(e)
+                                .with_source_code(NamedSource::new("<repl>", input.to_string()));
+                            eprintln!("{report:?}");
+                        }
                     },
-                    Err(e) => eprintln!("parse error: {e}"),
+                    Err(e) => {
+                        let report = Report::new(e.into_diagnostic())
+                            .with_source_code(NamedSource::new("<repl>", input.to_string()));
+                        eprintln!("{report:?}");
+                    }
                 }
             }
             Err(_) => {

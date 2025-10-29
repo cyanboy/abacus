@@ -1,5 +1,7 @@
 use std::fmt;
 
+use miette::SourceSpan;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind<'a> {
     Identifier(&'a str),
@@ -38,6 +40,15 @@ pub struct Span {
 impl Span {
     pub const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
+    }
+
+    pub fn len(&self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    pub fn to_source_span(&self) -> SourceSpan {
+        let len = self.len().max(1);
+        SourceSpan::new(self.start.into(), len.into())
     }
 }
 

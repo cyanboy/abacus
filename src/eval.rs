@@ -1,24 +1,97 @@
 use std::{collections::HashMap, fmt, rc::Rc};
 use thiserror::Error;
 
-use crate::parser::ast::*;
+use miette::{Diagnostic, SourceSpan};
 
-#[derive(Debug, Error)]
+use crate::{lexer::token::Span, parser::ast::*};
+
+#[derive(Debug, Error, Diagnostic)]
 pub enum EvalError {
-    #[error("undefined variable: {0}")]
-    UndefinedVar(String),
+    #[error("undefined variable: {name}")]
+    #[diagnostic(code(eval::undefined_variable))]
+    UndefinedVar {
+        name: String,
+        #[label("not defined here")]
+        span: Option<SourceSpan>,
+    },
 
-    #[error("undefined function: {0}")]
-    UndefinedFunc(String),
+    #[error("undefined function: {name}")]
+    #[diagnostic(code(eval::undefined_function))]
+    UndefinedFunc {
+        name: String,
+        #[label("not defined here")]
+        span: Option<SourceSpan>,
+    },
 
-    #[error("no matching arm for function: {0}")]
-    NoMatchingArm(String),
+    #[error("no matching arm for function: {name}")]
+    #[diagnostic(code(eval::no_matching_arm))]
+    NoMatchingArm {
+        name: String,
+        #[label("no matching arm")]
+        span: Option<SourceSpan>,
+    },
 
-    #[error("type error: {0}")]
-    TypeError(&'static str),
+    #[error("type error: {message}")]
+    #[diagnostic(code(eval::type_error))]
+    TypeError {
+        message: &'static str,
+        #[label("type error")]
+        span: Option<SourceSpan>,
+    },
 
     #[error("division by zero")]
-    DivideByZero,
+    #[diagnostic(code(eval::divide_by_zero))]
+    DivideByZero {
+        #[label("division by zero")]
+        span: Option<SourceSpan>,
+    },
+}
+
+impl EvalError {
+    fn undefined_var(name: String, span: Span) -> Self {
+        Self::UndefinedVar {
+            name,
+            span: Some(span.to_source_span()),
+        }
+    }
+
+    fn undefined_func(name: String, span: Span) -> Self {
+        Self::UndefinedFunc {
+            name,
+            span: Some(span.to_source_span()),
+        }
+    }
+
+    fn no_matching_arm(name: String, span: Span) -> Self {
+        Self::NoMatchingArm {
+            name,
+            span: Some(span.to_source_span()),
+        }
+    }
+
+    fn type_error(message: &'static str, span: Span) -> Self {
+        Self::TypeError {
+            message,
+            span: Some(span.to_source_span()),
+        }
+    }
+
+    fn divide_by_zero(span: Span) -> Self {
+        Self::DivideByZero {
+            span: Some(span.to_source_span()),
+        }
+    }
+
+    fn with_span(self, span: Span) -> Self {
+        let span = Some(span.to_source_span());
+        match self {
+            EvalError::UndefinedVar { name, .. } => EvalError::UndefinedVar { name, span },
+            EvalError::UndefinedFunc { name, .. } => EvalError::UndefinedFunc { name, span },
+            EvalError::NoMatchingArm { name, .. } => EvalError::NoMatchingArm { name, span },
+            EvalError::TypeError { message, .. } => EvalError::TypeError { message, span },
+            EvalError::DivideByZero { .. } => EvalError::DivideByZero { span },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,57 +165,57 @@ impl Env {
     }
 
     fn eval_expr(&mut self, e: &Expr) -> Result<Value, EvalError> {
-        use Expr::*;
         match e {
-            Lit(Literal::Int(n)) => Ok(Value::Int(*n)),
-            Lit(Literal::Float(x)) => Ok(Value::Float(*x)),
-            Lit(Literal::Bool(b)) => Ok(Value::Bool(*b)),
+            Expr::Lit(Literal::Int(n), _) => Ok(Value::Int(*n)),
+            Expr::Lit(Literal::Float(x), _) => Ok(Value::Float(*x)),
+            Expr::Lit(Literal::Bool(b), _) => Ok(Value::Bool(*b)),
 
-            Identifier(id) => self
+            Expr::Identifier(id, span) => self
                 .get_var(id)
-                .ok_or_else(|| EvalError::UndefinedVar(id.clone())),
+                .ok_or_else(|| EvalError::undefined_var(id.clone(), *span)),
 
-            Group(inner) => self.eval_expr(inner),
+            Expr::Group(inner, _) => self.eval_expr(inner),
 
-            Unary { op, rhs } => {
+            Expr::Unary { op, span, rhs } => {
                 let v = self.eval_expr(rhs)?;
                 match (op, v) {
                     (UnaryOp::Neg, Value::Int(i)) => Ok(Value::Int(-i)),
                     (UnaryOp::Neg, Value::Float(f)) => Ok(Value::Float(-f)),
                     (UnaryOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
-                    _ => Err(EvalError::TypeError("invalid unary operand")),
+                    _ => Err(EvalError::type_error("invalid unary operand", *span)),
                 }
             }
 
-            Binary { lhs, op, rhs } => self.eval_bin(op, lhs, rhs),
+            Expr::Binary { lhs, op, span, rhs } => self.eval_bin(*span, op, lhs, rhs),
 
-            Call { callee, args } => {
-                // callee must be an identifier
-                let fname: String = match &**callee {
-                    Identifier(s) => s.clone(),
-                    _ => return Err(EvalError::TypeError("callee must be identifier")),
+            Expr::Call { callee, args, span } => {
+                let (fname, fname_span) = match &**callee {
+                    Expr::Identifier(name, span) => (name.clone(), *span),
+                    other => {
+                        return Err(EvalError::type_error(
+                            "callee must be identifier",
+                            other.span(),
+                        ));
+                    }
                 };
 
-                // get arms and clone their handles to end the borrow
                 let arms: Vec<Rc<FuncArm>> = self
                     .funcs
                     .get(&fname)
                     .cloned()
-                    .ok_or_else(|| EvalError::UndefinedFunc(fname.clone()))?;
+                    .ok_or_else(|| EvalError::undefined_func(fname.clone(), fname_span))?;
 
-                // evaluate arguments once
                 let argv: Vec<Value> = args
                     .iter()
                     .map(|a| self.eval_expr(a))
                     .collect::<Result<_, _>>()?;
 
-                // try arms in stored order (most specific first); first match wins
                 for arm in &arms {
                     let arm = arm.as_ref();
                     if arm.params.len() != argv.len() {
                         continue;
                     }
-                    if let Some(bindings) = match_and_bind(&arm.params, &argv)? {
+                    if let Some(bindings) = match_and_bind(&arm.params, &argv, *span)? {
                         self.push_frame(bindings);
                         let out = self.eval_expr(&arm.body);
                         self.pop_frame();
@@ -150,40 +223,46 @@ impl Env {
                     }
                 }
 
-                Err(EvalError::NoMatchingArm(fname))
+                Err(EvalError::no_matching_arm(fname, *span))
             }
         }
     }
 
-    fn eval_bin(&mut self, op: &BinOp, lhs: &Expr, rhs: &Expr) -> Result<Value, EvalError> {
+    fn eval_bin(
+        &mut self,
+        span: Span,
+        op: &BinOp,
+        lhs: &Expr,
+        rhs: &Expr,
+    ) -> Result<Value, EvalError> {
         use Value::*;
 
         // short-circuiting boolean ops
         if *op == BinOp::And {
             let lval = self.eval_expr(lhs)?;
             let Bool(lb) = lval else {
-                return Err(EvalError::TypeError("boolean operands must be bool"));
+                return Err(EvalError::type_error("boolean operands must be bool", span));
             };
             if !lb {
                 return Ok(Bool(false));
             }
             let rval = self.eval_expr(rhs)?;
             let Bool(rb) = rval else {
-                return Err(EvalError::TypeError("boolean operands must be bool"));
+                return Err(EvalError::type_error("boolean operands must be bool", span));
             };
             return Ok(Bool(rb));
         }
         if *op == BinOp::Or {
             let lval = self.eval_expr(lhs)?;
             let Bool(lb) = lval else {
-                return Err(EvalError::TypeError("boolean operands must be bool"));
+                return Err(EvalError::type_error("boolean operands must be bool", span));
             };
             if lb {
                 return Ok(Bool(true));
             }
             let rval = self.eval_expr(rhs)?;
             let Bool(rb) = rval else {
-                return Err(EvalError::TypeError("boolean operands must be bool"));
+                return Err(EvalError::type_error("boolean operands must be bool", span));
             };
             return Ok(Bool(rb));
         }
@@ -208,32 +287,32 @@ impl Env {
 
             (BinOp::Div, Int(a), Int(b)) => {
                 if b == 0 {
-                    return Err(EvalError::DivideByZero);
+                    return Err(EvalError::divide_by_zero(span));
                 }
                 Int(a / b)
             }
             (BinOp::Div, Float(a), Float(b)) => {
                 if b == 0.0 {
-                    return Err(EvalError::DivideByZero);
+                    return Err(EvalError::divide_by_zero(span));
                 }
                 Float(a / b)
             }
             (BinOp::Div, Int(a), Float(b)) => {
                 if b == 0.0 {
-                    return Err(EvalError::DivideByZero);
+                    return Err(EvalError::divide_by_zero(span));
                 }
                 Float((a as f64) / b)
             }
             (BinOp::Div, Float(a), Int(b)) => {
                 if b == 0 {
-                    return Err(EvalError::DivideByZero);
+                    return Err(EvalError::divide_by_zero(span));
                 }
                 Float(a / (b as f64))
             }
 
             (BinOp::Mod, Int(a), Int(b)) => {
                 if b == 0 {
-                    return Err(EvalError::DivideByZero);
+                    return Err(EvalError::divide_by_zero(span));
                 }
                 Int(a % b)
             }
@@ -242,8 +321,8 @@ impl Env {
             (BinOp::BitOr, Int(a), Int(b)) => Int(a | b),
             (BinOp::Xor, Int(a), Int(b)) => Int(a ^ b),
 
-            (BinOp::Eq, a, b) => Bool(val_eq(&a, &b)?),
-            (BinOp::Ne, a, b) => Bool(!val_eq(&a, &b)?),
+            (BinOp::Eq, a, b) => Bool(val_eq(&a, &b).map_err(|e| e.with_span(span))?),
+            (BinOp::Ne, a, b) => Bool(!val_eq(&a, &b).map_err(|e| e.with_span(span))?),
 
             (BinOp::Lt, Int(a), Int(b)) => Bool(a < b),
             (BinOp::LtEq, Int(a), Int(b)) => Bool(a <= b),
@@ -263,7 +342,7 @@ impl Env {
             (BinOp::GtEq, Int(a), Float(b)) => Bool((a as f64) >= b),
             (BinOp::GtEq, Float(a), Int(b)) => Bool(a >= (b as f64)),
 
-            _ => return Err(EvalError::TypeError("invalid operand types")),
+            _ => return Err(EvalError::type_error("invalid operand types", span)),
         })
     }
 }
@@ -287,6 +366,7 @@ fn val_eq(a: &Value, b: &Value) -> Result<bool, EvalError> {
 fn match_and_bind(
     params: &[Pattern],
     args: &[Value],
+    span: Span,
 ) -> Result<Option<HashMap<String, Value>>, EvalError> {
     let mut bindings = HashMap::new();
     for (p, a) in params.iter().zip(args) {
@@ -295,17 +375,17 @@ fn match_and_bind(
                 bindings.insert(name.clone(), a.clone());
             }
             Pattern::Lit(Literal::Int(n)) => {
-                if !val_eq(a, &Value::Int(*n))? {
+                if !val_eq(a, &Value::Int(*n)).map_err(|e| e.with_span(span))? {
                     return Ok(None);
                 }
             }
             Pattern::Lit(Literal::Float(x)) => {
-                if !val_eq(a, &Value::Float(*x))? {
+                if !val_eq(a, &Value::Float(*x)).map_err(|e| e.with_span(span))? {
                     return Ok(None);
                 }
             }
             Pattern::Lit(Literal::Bool(b)) => {
-                if !val_eq(a, &Value::Bool(*b))? {
+                if !val_eq(a, &Value::Bool(*b)).map_err(|e| e.with_span(span))? {
                     return Ok(None);
                 }
             }
@@ -325,24 +405,32 @@ fn pattern_specificity(params: &[Pattern]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt};
+    use crate::{
+        lexer::token::Span,
+        parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt},
+    };
+
+    fn dummy_span() -> Span {
+        Span::new(0, 0)
+    }
 
     fn lit_int(n: i64) -> Expr {
-        Expr::Lit(Literal::Int(n))
+        Expr::Lit(Literal::Int(n), dummy_span())
     }
 
     fn lit_bool(b: bool) -> Expr {
-        Expr::Lit(Literal::Bool(b))
+        Expr::Lit(Literal::Bool(b), dummy_span())
     }
 
     fn lit_float(f: f64) -> Expr {
-        Expr::Lit(Literal::Float(f))
+        Expr::Lit(Literal::Float(f), dummy_span())
     }
 
     fn binary(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
         Expr::Binary {
             lhs: Box::new(lhs),
             op,
+            span: dummy_span(),
             rhs: Box::new(rhs),
         }
     }
@@ -353,8 +441,9 @@ mod tests {
 
     fn call(name: &str, args: Vec<Expr>) -> Expr {
         Expr::Call {
-            callee: Box::new(Expr::Identifier(name.into())),
+            callee: Box::new(Expr::Identifier(name.into(), dummy_span())),
             args,
+            span: dummy_span(),
         }
     }
 
@@ -386,7 +475,13 @@ mod tests {
         let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::And, lit_bool(true)))
             .expect_err("expected type error for int && bool");
         assert!(
-            matches!(err, EvalError::TypeError("boolean operands must be bool")),
+            matches!(
+                err,
+                EvalError::TypeError {
+                    message: "boolean operands must be bool",
+                    ..
+                }
+            ),
             "unexpected error: {err:?}"
         );
 
@@ -394,7 +489,13 @@ mod tests {
         let err = eval_expr_stmt(&mut env, binary(lit_bool(false), BinOp::Or, lit_int(0)))
             .expect_err("expected type error for bool || int");
         assert!(
-            matches!(err, EvalError::TypeError("boolean operands must be bool")),
+            matches!(
+                err,
+                EvalError::TypeError {
+                    message: "boolean operands must be bool",
+                    ..
+                }
+            ),
             "unexpected error: {err:?}"
         );
     }
@@ -423,7 +524,7 @@ mod tests {
         let mut env = Env::new();
         let err = eval_expr_stmt(&mut env, binary(lit_int(5), BinOp::Mod, lit_int(0)))
             .expect_err("expected divide-by-zero error for modulo");
-        assert!(matches!(err, EvalError::DivideByZero));
+        assert!(matches!(err, EvalError::DivideByZero { .. }));
     }
 
     #[test]
@@ -470,7 +571,7 @@ mod tests {
         // Ensure int / float zero is caught
         let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::Div, lit_float(0.0)))
             .expect_err("expected divide-by-zero for int / float zero");
-        assert!(matches!(err, EvalError::DivideByZero));
+        assert!(matches!(err, EvalError::DivideByZero { .. }));
     }
 
     #[test]
@@ -498,7 +599,7 @@ mod tests {
             name: "f".into(),
             arms: vec![FuncArm {
                 params: vec![Pattern::Identifier("x".into())],
-                body: Expr::Identifier("x".into()),
+                body: Expr::Identifier("x".into(), dummy_span()),
             }],
         })
         .unwrap();

@@ -1,3 +1,5 @@
+use crate::lexer::token::Span;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Int(i64),
@@ -14,22 +16,25 @@ pub enum Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Lit(Literal),
-    Identifier(String),
+    Lit(Literal, Span),
+    Identifier(String, Span),
     Unary {
         op: UnaryOp,
+        span: Span,
         rhs: Box<Expr>,
     },
     Binary {
         lhs: Box<Expr>,
         op: BinOp,
+        span: Span,
         rhs: Box<Expr>,
     },
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+        span: Span,
     },
-    Group(Box<Expr>),
+    Group(Box<Expr>, Span),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +73,19 @@ pub enum Pattern {
 pub struct FuncArm {
     pub params: Vec<Pattern>,
     pub body: Expr,
+}
+
+impl Expr {
+    pub fn span(&self) -> Span {
+        match self {
+            Expr::Lit(_, span) => *span,
+            Expr::Identifier(_, span) => *span,
+            Expr::Unary { span, .. } => *span,
+            Expr::Binary { span, .. } => *span,
+            Expr::Call { span, .. } => *span,
+            Expr::Group(_, span) => *span,
+        }
+    }
 }
 
 #[cfg(test)]
