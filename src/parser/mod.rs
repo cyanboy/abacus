@@ -351,7 +351,7 @@ impl<'a> Parser<'a> {
         }
         // scan to matching ')'
         let mut depth = 1usize;
-        while let Some(next) = snap.next() {
+        for next in snap.by_ref() {
             let t = next.map_err(ParseError::LexerError)?;
             match t.kind {
                 TokenKind::OpenParen => depth += 1,
@@ -407,10 +407,17 @@ fn infix_bp(tok: &TokenKind) -> Option<(BinOp, u8, u8)> {
         TokenKind::BitOr => Some((BitOr, 3, 4)),
         TokenKind::BitAnd => Some((BitAnd, 4, 5)),
         TokenKind::Caret => Some((Xor, 5, 6)),
-        TokenKind::Eq | TokenKind::Ne => Some((Eq, 6, 7)), // adjust as needed per op
-        TokenKind::Lt | TokenKind::LtEq | TokenKind::Gt | TokenKind::GtEq => Some((Lt, 7, 8)),
-        TokenKind::Plus | TokenKind::Minus => Some((Add, 8, 9)),
-        TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((Mul, 9, 10)),
+        TokenKind::Eq => Some((Eq, 6, 7)),
+        TokenKind::Ne => Some((Ne, 6, 7)),
+        TokenKind::Lt => Some((Lt, 7, 8)),
+        TokenKind::LtEq => Some((LtEq, 7, 8)),
+        TokenKind::Gt => Some((Gt, 7, 8)),
+        TokenKind::GtEq => Some((GtEq, 7, 8)),
+        TokenKind::Plus => Some((Add, 8, 9)),
+        TokenKind::Minus => Some((Sub, 8, 9)),
+        TokenKind::Star => Some((Mul, 9, 10)),
+        TokenKind::Slash => Some((Div, 9, 10)),
+        TokenKind::Percent => Some((Mod, 9, 10)),
         _ => None,
     }
 }
@@ -499,6 +506,61 @@ mod tests {
     }
 
     #[test]
+    fn parses_additional_binary_ops() {
+        let Expr::Binary { op, span, .. } = parse_expr("1 != 2") else {
+            panic!("expected binary expression");
+        };
+        assert_eq!(op, BinOp::Ne);
+        assert_eq!(span, Span::new(0, 6));
+
+        let Expr::Binary { op, span, .. } = parse_expr("3 < 4") else {
+            panic!("expected comparison expression");
+        };
+        assert_eq!(op, BinOp::Lt);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("4 > 3") else {
+            panic!("expected comparison expression");
+        };
+        assert_eq!(op, BinOp::Gt);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("5 - 2") else {
+            panic!("expected subtraction expression");
+        };
+        assert_eq!(op, BinOp::Sub);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("2 * 3") else {
+            panic!("expected multiplication expression");
+        };
+        assert_eq!(op, BinOp::Mul);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("8 / 4") else {
+            panic!("expected division expression");
+        };
+        assert_eq!(op, BinOp::Div);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("9 % 5") else {
+            panic!("expected modulo expression");
+        };
+        assert_eq!(op, BinOp::Mod);
+        assert_eq!(span, Span::new(0, 5));
+    }
+
+    #[test]
+    fn binop_variants_constructible() {
+        use BinOp::*;
+
+        let all = [
+            And, BitAnd, Or, BitOr, Eq, Ne, Lt, LtEq, Gt, GtEq, Xor, Add, Sub, Mul, Div, Mod,
+        ];
+        assert_eq!(all.len(), 16);
+    }
+
+    #[test]
     fn reports_unclosed_grouping() {
         let err = parse("(1 + 2").unwrap_err();
         assert!(
@@ -541,5 +603,9 @@ mod tests {
             Stmt::Expression(expr) => expr,
             other => panic!("expected expression statement, got {other:?}"),
         }
+    }
+
+    fn parse_expr(input: &str) -> Expr {
+        expect_expr(parse(input).unwrap())
     }
 }

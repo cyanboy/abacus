@@ -29,8 +29,8 @@ impl From<Option<Span>> for SpanLabel {
 }
 
 impl SpanLabel {
-    pub fn to_source_span(self) -> Option<SourceSpan> {
-        self.0.map(|span| span.to_source_span())
+    pub fn into_source_span(self) -> Option<SourceSpan> {
+        self.0.map(|span| span.into_source_span())
     }
 }
 
@@ -78,10 +78,10 @@ impl<'a> ParseError<'a> {
             } => ParseDiagnostic::UnexpectedToken {
                 expected,
                 found: found.map(|tok| tok.to_string()),
-                span: span.to_source_span(),
+                span: span.into_source_span(),
             },
             ParseError::LexerError(error) => ParseDiagnostic::LexerError {
-                span: error.span().map(|sp| sp.to_source_span()),
+                span: error.span().map(|sp| sp.into_source_span()),
                 error,
             },
         }

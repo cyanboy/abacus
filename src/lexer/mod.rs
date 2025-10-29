@@ -43,12 +43,12 @@ impl<'a> Lexer<'a> {
         one: TokenKind<'a>,
     ) -> (TokenKind<'a>, usize) {
         let mut end = start + first_len;
-        if let Some(&(_, c)) = self.chars.peek() {
-            if c == expected {
-                self.chars.next();
-                end += c.len_utf8();
-                return (two, end);
-            }
+        if let Some(&(_, c)) = self.chars.peek()
+            && c == expected
+        {
+            self.chars.next();
+            end += c.len_utf8();
+            return (two, end);
         }
         (one, end)
     }
@@ -120,7 +120,7 @@ impl<'a> Lexer<'a> {
     /// Supports:
     /// - integers: `123`
     /// - floats: `1.`, `.1` is not accepted here, `1.2`, `1.2e-3`, `1e10`
-    /// Returns `Literal(Integer(_))` or `Literal(Float(_))`.
+    ///   Returns `Literal(Integer(_))` or `Literal(Float(_))`.
     fn numeric_literal(
         &mut self,
         start: usize,

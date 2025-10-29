@@ -51,39 +51,39 @@ impl EvalError {
     fn undefined_var(name: String, span: Span) -> Self {
         Self::UndefinedVar {
             name,
-            span: Some(span.to_source_span()),
+            span: Some(span.into_source_span()),
         }
     }
 
     fn undefined_func(name: String, span: Span) -> Self {
         Self::UndefinedFunc {
             name,
-            span: Some(span.to_source_span()),
+            span: Some(span.into_source_span()),
         }
     }
 
     fn no_matching_arm(name: String, span: Span) -> Self {
         Self::NoMatchingArm {
             name,
-            span: Some(span.to_source_span()),
+            span: Some(span.into_source_span()),
         }
     }
 
     fn type_error(message: &'static str, span: Span) -> Self {
         Self::TypeError {
             message,
-            span: Some(span.to_source_span()),
+            span: Some(span.into_source_span()),
         }
     }
 
     fn divide_by_zero(span: Span) -> Self {
         Self::DivideByZero {
-            span: Some(span.to_source_span()),
+            span: Some(span.into_source_span()),
         }
     }
 
     fn with_span(self, span: Span) -> Self {
-        let span = Some(span.to_source_span());
+        let span = Some(span.into_source_span());
         match self {
             EvalError::UndefinedVar { name, .. } => EvalError::UndefinedVar { name, span },
             EvalError::UndefinedFunc { name, .. } => EvalError::UndefinedFunc { name, span },
