@@ -4,7 +4,7 @@ pub mod error;
 pub mod token;
 
 use error::LexError;
-use token::{Token, Token::*};
+use token::{Span, Token, TokenKind, TokenKind::*};
 
 /// Streaming, zero-allocation lexer over `&str`.
 /// Emits `Result<Token, LexError>` and implements `Iterator`.
@@ -34,14 +34,23 @@ impl<'a> Lexer<'a> {
     /// If the next char equals `expected`, return operator `a` and consume it;
     /// otherwise return single-char operator `b` without consuming `expected`.
     #[inline]
-    fn choose(&mut self, expected: char, a: Token<'a>, b: Token<'a>) -> Token<'a> {
-        match self.chars.peek() {
-            Some(&(_, c)) if c == expected => {
+    fn match_dual(
+        &mut self,
+        start: usize,
+        first_len: usize,
+        expected: char,
+        two: TokenKind<'a>,
+        one: TokenKind<'a>,
+    ) -> (TokenKind<'a>, usize) {
+        let mut end = start + first_len;
+        if let Some(&(_, c)) = self.chars.peek() {
+            if c == expected {
                 self.chars.next();
-                a
+                end += c.len_utf8();
+                return (two, end);
             }
-            _ => b,
         }
+        (one, end)
     }
 
     /// Core lexer step: skip ws, read one token, or return an error.
@@ -50,34 +59,57 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace();
 
         let (pos, ch) = self.chars.next()?; // EOF → None
+        let first_len = ch.len_utf8();
 
         Some(match ch {
             // Single-char operators and separators
-            '+' => Ok(Plus),
-            '-' => Ok(Minus),
-            '*' => Ok(Star),
-            '/' => Ok(Slash),
-            '%' => Ok(Percent),
-            '^' => Ok(Caret),
-            ',' => Ok(Comma),
-            '(' => Ok(OpenParen),
-            ')' => Ok(CloseParen),
-            '[' => Ok(OpenBracket),
-            ']' => Ok(CloseBracket),
+            '+' => Ok(Token::new(Plus, Span::new(pos, pos + first_len))),
+            '-' => Ok(Token::new(Minus, Span::new(pos, pos + first_len))),
+            '*' => Ok(Token::new(Star, Span::new(pos, pos + first_len))),
+            '/' => Ok(Token::new(Slash, Span::new(pos, pos + first_len))),
+            '%' => Ok(Token::new(Percent, Span::new(pos, pos + first_len))),
+            '^' => Ok(Token::new(Caret, Span::new(pos, pos + first_len))),
+            ',' => Ok(Token::new(Comma, Span::new(pos, pos + first_len))),
+            '(' => Ok(Token::new(OpenParen, Span::new(pos, pos + first_len))),
+            ')' => Ok(Token::new(CloseParen, Span::new(pos, pos + first_len))),
 
             // Two-char or fallback to single-char operators
-            '=' => Ok(self.choose('=', Eq, Assign)),
-            '!' => Ok(self.choose('=', Ne, Bang)),
-            '<' => Ok(self.choose('=', LtEq, Lt)),
-            '>' => Ok(self.choose('=', GtEq, Gt)),
-            '|' => Ok(self.choose('|', Or, BitOr)),
-            '&' => Ok(self.choose('&', And, BitAnd)),
+            '=' => {
+                let (tok, end) = self.match_dual(pos, first_len, '=', Eq, Assign);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
+            '!' => {
+                let (tok, end) = self.match_dual(pos, first_len, '=', Ne, Bang);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
+            '<' => {
+                let (tok, end) = self.match_dual(pos, first_len, '=', LtEq, Lt);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
+            '>' => {
+                let (tok, end) = self.match_dual(pos, first_len, '=', GtEq, Gt);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
+            '|' => {
+                let (tok, end) = self.match_dual(pos, first_len, '|', Or, BitOr);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
+            '&' => {
+                let (tok, end) = self.match_dual(pos, first_len, '&', And, BitAnd);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
 
             // Identifiers / keywords
-            c if is_ident_start(c) => Ok(self.identifier_or_keyword(pos, ch)),
+            c if is_ident_start(c) => {
+                let (tok, end) = self.identifier_or_keyword(pos, ch);
+                Ok(Token::new(tok, Span::new(pos, end)))
+            }
 
             // Numeric literals: int or float (with optional exponent)
-            c if c.is_ascii_digit() => self.numeric_literal(pos, ch),
+            c if c.is_ascii_digit() => match self.numeric_literal(pos, ch) {
+                Ok((tok, end)) => Ok(Token::new(tok, Span::new(pos, end))),
+                Err(e) => Err(e),
+            },
 
             // Unknown character
             _ => Err(LexError::UnexpectedCharacter { pos, ch }),
@@ -89,7 +121,11 @@ impl<'a> Lexer<'a> {
     /// - integers: `123`
     /// - floats: `1.`, `.1` is not accepted here, `1.2`, `1.2e-3`, `1e10`
     /// Returns `Literal(Integer(_))` or `Literal(Float(_))`.
-    fn numeric_literal(&mut self, start: usize, first: char) -> Result<Token<'a>, LexError> {
+    fn numeric_literal(
+        &mut self,
+        start: usize,
+        first: char,
+    ) -> Result<(TokenKind<'a>, usize), LexError> {
         let mut end = start + first.len_utf8();
         let mut is_decimal = false;
 
@@ -140,7 +176,7 @@ impl<'a> Lexer<'a> {
 
         // Parse the captured substring
         let s = &self.s[start..end];
-        if is_decimal {
+        let token = if is_decimal {
             s.parse()
                 .map(Float)
                 .map_err(|_| LexError::InvalidNumber { start, end })
@@ -148,12 +184,13 @@ impl<'a> Lexer<'a> {
             s.parse()
                 .map(Integer)
                 .map_err(|_| LexError::InvalidNumber { start, end })
-        }
+        }?;
+        Ok((token, end))
     }
 
     /// Lex an identifier or boolean keyword.
     /// Accepts `[A-Za-z_][A-Za-z0-9_]*`. Maps `true/false` to boolean literals.
-    fn identifier_or_keyword(&mut self, start: usize, first: char) -> Token<'a> {
+    fn identifier_or_keyword(&mut self, start: usize, first: char) -> (TokenKind<'a>, usize) {
         let mut end = start + first.len_utf8();
 
         while let Some(&(idx, c)) = self.chars.peek() {
@@ -165,11 +202,12 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        match &self.s[start..end] {
+        let token = match &self.s[start..end] {
             "true" => Bool(true),
             "false" => Bool(false),
-            ident => Token::Identifier(ident),
-        }
+            ident => TokenKind::Identifier(ident),
+        };
+        (token, end)
     }
 }
 
@@ -199,15 +237,16 @@ mod tests {
     use super::*;
 
     /// Assert that a single token is produced for `input`.
-    fn assert_token(input: &str, expected: Token) {
+    fn assert_token(input: &str, expected: TokenKind) {
         let mut lexer = Lexer::new(input);
-        assert_eq!(lexer.next().unwrap().unwrap(), expected);
+        let spanned = lexer.next().unwrap().unwrap();
+        assert_eq!(spanned.kind, expected);
     }
 
     /// Collect all tokens and compare.
-    fn assert_tokens(input: &str, expected: Vec<Token>) {
+    fn assert_tokens(input: &str, expected: Vec<TokenKind>) {
         let lexer = Lexer::new(input);
-        let result: Result<Vec<_>, _> = lexer.collect();
+        let result: Result<Vec<_>, _> = lexer.map(|t| t.map(|sp| sp.kind)).collect();
         assert_eq!(result.unwrap(), expected);
     }
 
@@ -229,8 +268,6 @@ mod tests {
             ("^", Caret),
             ("(", OpenParen),
             (")", CloseParen),
-            ("[", OpenBracket),
-            ("]", CloseBracket),
             (",", Comma),
         ];
 

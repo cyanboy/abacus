@@ -1,5 +1,10 @@
-use abacus::{eval::Env, lexer::Lexer, parser::Parser};
 use rustyline::DefaultEditor;
+
+mod eval;
+mod lexer;
+mod parser;
+
+use crate::{eval::Env, lexer::Lexer, parser::Parser};
 
 fn main() {
     println!("Abacus - Calculator REPL");
@@ -18,7 +23,7 @@ fn main() {
                 }
                 rl.add_history_entry(input).unwrap();
 
-                if line == "quit" || line == "exit" {
+                if input == "quit" || input == "exit" {
                     println!("Goodbye!");
                     break;
                 }

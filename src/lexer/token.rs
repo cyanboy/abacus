@@ -1,39 +1,67 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token<'a> {
+pub enum TokenKind<'a> {
     Identifier(&'a str),
     Integer(i64),
     Float(f64),
     Bool(bool),
-    Assign,       // '='
-    Plus,         // '+'
-    Minus,        // '-'
-    Star,         // '*'
-    Slash,        // '/'
-    Percent,      // '%'
-    Bang,         // '!'
-    Caret,        // '^'
-    Eq,           // '=='
-    Gt,           // '>'
-    GtEq,         // '>='
-    Lt,           // '<'
-    LtEq,         // '<='
-    Ne,           // '!='
-    BitOr,        // '|'
-    Or,           // '||'
-    BitAnd,       // '&'
-    And,          // '&&'
-    Comma,        // ','
-    OpenParen,    // '('
-    CloseParen,   // ')
-    OpenBracket,  // '['
-    CloseBracket, // ']'
+    Assign,     // '='
+    Plus,       // '+'
+    Minus,      // '-'
+    Star,       // '*'
+    Slash,      // '/'
+    Percent,    // '%'
+    Bang,       // '!'
+    Caret,      // '^'
+    Eq,         // '=='
+    Gt,         // '>'
+    GtEq,       // '>='
+    Lt,         // '<'
+    LtEq,       // '<='
+    Ne,         // '!='
+    BitOr,      // '|'
+    Or,         // '||'
+    BitAnd,     // '&'
+    And,        // '&&'
+    Comma,      // ','
+    OpenParen,  // '('
+    CloseParen, // ')'
 }
 
-impl fmt::Display for Token<'_> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub const fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+}
+
+impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Token::*;
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token<'a> {
+    pub kind: TokenKind<'a>,
+    pub span: Span,
+}
+
+impl<'a> Token<'a> {
+    pub fn new(kind: TokenKind<'a>, span: Span) -> Self {
+        Self { kind, span }
+    }
+}
+
+impl fmt::Display for TokenKind<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use TokenKind::*;
         match self {
             Identifier(id) => write!(f, "{}", id),
             Integer(num) => write!(f, "{}", num),
@@ -60,8 +88,6 @@ impl fmt::Display for Token<'_> {
             Comma => write!(f, ","),
             OpenParen => write!(f, "("),
             CloseParen => write!(f, ")"),
-            OpenBracket => write!(f, "["),
-            CloseBracket => write!(f, "]"),
         }
     }
 }

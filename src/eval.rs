@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt, rc::Rc};
 use thiserror::Error;
 
 use crate::parser::ast::*;
@@ -14,9 +13,6 @@ pub enum EvalError {
 
     #[error("no matching arm for function: {0}")]
     NoMatchingArm(String),
-
-    #[error("arity mismatch: expected {expected}, got {got}")]
-    ArityMismatch { expected: usize, got: usize },
 
     #[error("type error: {0}")]
     TypeError(&'static str),
@@ -42,12 +38,12 @@ impl fmt::Display for Value {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug)]
 pub struct Env {
     // scope stack: global frame at index 0; top is current frame
     scopes: Vec<HashMap<String, Value>>,
-    // function name -> list of arms (pattern + body)
-    funcs: HashMap<String, Vec<FuncArm>>,
+    // function name -> list of arms (pattern + body) ordered by specificity
+    funcs: HashMap<String, Vec<Rc<FuncArm>>>,
 }
 
 impl Env {
@@ -84,10 +80,11 @@ impl Env {
                 Ok(None)
             }
             Stmt::FunctionDefinition { name, arms } => {
-                self.funcs
-                    .entry(name.clone())
-                    .or_default()
-                    .extend(arms.clone());
+                let entry = self.funcs.entry(name.clone()).or_default();
+                entry.extend(arms.iter().cloned().map(Rc::new));
+                entry.sort_by(|a, b| {
+                    pattern_specificity(&b.params).cmp(&pattern_specificity(&a.params))
+                });
                 Ok(None)
             }
             Stmt::Expression(e) => self.eval_expr(e).map(Some),
@@ -126,8 +123,8 @@ impl Env {
                     _ => return Err(EvalError::TypeError("callee must be identifier")),
                 };
 
-                // get arms and clone them to end the borrow
-                let arms: Vec<FuncArm> = self
+                // get arms and clone their handles to end the borrow
+                let arms: Vec<Rc<FuncArm>> = self
                     .funcs
                     .get(&fname)
                     .cloned()
@@ -139,14 +136,9 @@ impl Env {
                     .map(|a| self.eval_expr(a))
                     .collect::<Result<_, _>>()?;
 
-                // Option A: sort by specificity (literal patterns first)
-                let mut sorted = arms;
-                sorted.sort_by(|a, b| {
-                    pattern_specificity(&b.params).cmp(&pattern_specificity(&a.params))
-                });
-
-                // try arms in order; first match wins
-                for arm in &sorted {
+                // try arms in stored order (most specific first); first match wins
+                for arm in &arms {
+                    let arm = arm.as_ref();
                     if arm.params.len() != argv.len() {
                         continue;
                     }
@@ -168,20 +160,32 @@ impl Env {
 
         // short-circuiting boolean ops
         if *op == BinOp::And {
-            let lb = matches!(self.eval_expr(lhs)?, Bool(true));
-            return if !lb {
-                Ok(Bool(false))
-            } else {
-                Ok(Bool(matches!(self.eval_expr(rhs)?, Bool(true))))
+            let lval = self.eval_expr(lhs)?;
+            let Bool(lb) = lval else {
+                return Err(EvalError::TypeError("boolean operands must be bool"));
             };
+            if !lb {
+                return Ok(Bool(false));
+            }
+            let rval = self.eval_expr(rhs)?;
+            let Bool(rb) = rval else {
+                return Err(EvalError::TypeError("boolean operands must be bool"));
+            };
+            return Ok(Bool(rb));
         }
         if *op == BinOp::Or {
-            let lb = matches!(self.eval_expr(lhs)?, Bool(true));
-            return if lb {
-                Ok(Bool(true))
-            } else {
-                Ok(Bool(matches!(self.eval_expr(rhs)?, Bool(true))))
+            let lval = self.eval_expr(lhs)?;
+            let Bool(lb) = lval else {
+                return Err(EvalError::TypeError("boolean operands must be bool"));
             };
+            if lb {
+                return Ok(Bool(true));
+            }
+            let rval = self.eval_expr(rhs)?;
+            let Bool(rb) = rval else {
+                return Err(EvalError::TypeError("boolean operands must be bool"));
+            };
+            return Ok(Bool(rb));
         }
 
         let l = self.eval_expr(lhs)?;
@@ -189,12 +193,18 @@ impl Env {
         Ok(match (op, l, r) {
             (BinOp::Add, Int(a), Int(b)) => Int(a + b),
             (BinOp::Add, Float(a), Float(b)) => Float(a + b),
+            (BinOp::Add, Int(a), Float(b)) => Float((a as f64) + b),
+            (BinOp::Add, Float(a), Int(b)) => Float(a + (b as f64)),
 
             (BinOp::Sub, Int(a), Int(b)) => Int(a - b),
             (BinOp::Sub, Float(a), Float(b)) => Float(a - b),
+            (BinOp::Sub, Int(a), Float(b)) => Float((a as f64) - b),
+            (BinOp::Sub, Float(a), Int(b)) => Float(a - (b as f64)),
 
             (BinOp::Mul, Int(a), Int(b)) => Int(a * b),
             (BinOp::Mul, Float(a), Float(b)) => Float(a * b),
+            (BinOp::Mul, Int(a), Float(b)) => Float((a as f64) * b),
+            (BinOp::Mul, Float(a), Int(b)) => Float(a * (b as f64)),
 
             (BinOp::Div, Int(a), Int(b)) => {
                 if b == 0 {
@@ -202,9 +212,31 @@ impl Env {
                 }
                 Int(a / b)
             }
-            (BinOp::Div, Float(a), Float(b)) => Float(a / b),
+            (BinOp::Div, Float(a), Float(b)) => {
+                if b == 0.0 {
+                    return Err(EvalError::DivideByZero);
+                }
+                Float(a / b)
+            }
+            (BinOp::Div, Int(a), Float(b)) => {
+                if b == 0.0 {
+                    return Err(EvalError::DivideByZero);
+                }
+                Float((a as f64) / b)
+            }
+            (BinOp::Div, Float(a), Int(b)) => {
+                if b == 0 {
+                    return Err(EvalError::DivideByZero);
+                }
+                Float(a / (b as f64))
+            }
 
-            (BinOp::Mod, Int(a), Int(b)) => Int(a % b),
+            (BinOp::Mod, Int(a), Int(b)) => {
+                if b == 0 {
+                    return Err(EvalError::DivideByZero);
+                }
+                Int(a % b)
+            }
 
             (BinOp::BitAnd, Int(a), Int(b)) => Int(a & b),
             (BinOp::BitOr, Int(a), Int(b)) => Int(a | b),
@@ -222,6 +254,14 @@ impl Env {
             (BinOp::LtEq, Float(a), Float(b)) => Bool(a <= b),
             (BinOp::Gt, Float(a), Float(b)) => Bool(a > b),
             (BinOp::GtEq, Float(a), Float(b)) => Bool(a >= b),
+            (BinOp::Lt, Int(a), Float(b)) => Bool((a as f64) < b),
+            (BinOp::Lt, Float(a), Int(b)) => Bool(a < (b as f64)),
+            (BinOp::LtEq, Int(a), Float(b)) => Bool((a as f64) <= b),
+            (BinOp::LtEq, Float(a), Int(b)) => Bool(a <= (b as f64)),
+            (BinOp::Gt, Int(a), Float(b)) => Bool((a as f64) > b),
+            (BinOp::Gt, Float(a), Int(b)) => Bool(a > (b as f64)),
+            (BinOp::GtEq, Int(a), Float(b)) => Bool((a as f64) >= b),
+            (BinOp::GtEq, Float(a), Int(b)) => Bool(a >= (b as f64)),
 
             _ => return Err(EvalError::TypeError("invalid operand types")),
         })
@@ -280,4 +320,207 @@ fn pattern_specificity(params: &[Pattern]) -> usize {
         .iter()
         .filter(|p| matches!(p, Pattern::Lit(_)))
         .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt};
+
+    fn lit_int(n: i64) -> Expr {
+        Expr::Lit(Literal::Int(n))
+    }
+
+    fn lit_bool(b: bool) -> Expr {
+        Expr::Lit(Literal::Bool(b))
+    }
+
+    fn lit_float(f: f64) -> Expr {
+        Expr::Lit(Literal::Float(f))
+    }
+
+    fn binary(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
+        Expr::Binary {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
+        }
+    }
+
+    fn eval_expr_stmt(env: &mut Env, expr: Expr) -> Result<Option<Value>, EvalError> {
+        env.eval_stmt(&Stmt::Expression(expr))
+    }
+
+    fn call(name: &str, args: Vec<Expr>) -> Expr {
+        Expr::Call {
+            callee: Box::new(Expr::Identifier(name.into())),
+            args,
+        }
+    }
+
+    fn expect_value(env: &mut Env, expr: Expr) -> Value {
+        eval_expr_stmt(env, expr)
+            .expect("expression should evaluate successfully")
+            .expect("expression statements should yield a value")
+    }
+
+    fn assert_float_eq(actual: Value, expected: f64) {
+        match actual {
+            Value::Float(v) => {
+                assert!((v - expected).abs() < 1e-9, "expected {expected}, got {v}");
+            }
+            Value::Int(i) => {
+                let v = i as f64;
+                assert!(
+                    (v - expected).abs() < 1e-9,
+                    "expected float {expected}, got int {i}"
+                );
+            }
+            other => panic!("expected numeric value, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bool_ops_require_bool_operands() {
+        let mut env = Env::new();
+        let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::And, lit_bool(true)))
+            .expect_err("expected type error for int && bool");
+        assert!(
+            matches!(err, EvalError::TypeError("boolean operands must be bool")),
+            "unexpected error: {err:?}"
+        );
+
+        let mut env = Env::new();
+        let err = eval_expr_stmt(&mut env, binary(lit_bool(false), BinOp::Or, lit_int(0)))
+            .expect_err("expected type error for bool || int");
+        assert!(
+            matches!(err, EvalError::TypeError("boolean operands must be bool")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn bool_ops_short_circuit() {
+        let mut env = Env::new();
+        let rhs_err = binary(lit_int(1), BinOp::Div, lit_int(0));
+        let expr = binary(lit_bool(false), BinOp::And, rhs_err);
+        let result = eval_expr_stmt(&mut env, expr)
+            .expect("expected short-circuit to avoid division by zero")
+            .expect("expression statements should yield a value");
+        assert_eq!(result, Value::Bool(false));
+
+        let mut env = Env::new();
+        let rhs_err = binary(lit_int(1), BinOp::Div, lit_int(0));
+        let expr = binary(lit_bool(true), BinOp::Or, rhs_err);
+        let result = eval_expr_stmt(&mut env, expr)
+            .expect("expected short-circuit to avoid division by zero")
+            .expect("expression statements should yield a value");
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn modulo_by_zero_reports_error() {
+        let mut env = Env::new();
+        let err = eval_expr_stmt(&mut env, binary(lit_int(5), BinOp::Mod, lit_int(0)))
+            .expect_err("expected divide-by-zero error for modulo");
+        assert!(matches!(err, EvalError::DivideByZero));
+    }
+
+    #[test]
+
+    fn mixed_numeric_arithmetic() {
+        let mut env = Env::new();
+
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_int(1), BinOp::Add, lit_float(2.5))),
+            3.5,
+        );
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_float(2.5), BinOp::Add, lit_int(1))),
+            3.5,
+        );
+
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_int(1), BinOp::Sub, lit_float(2.5))),
+            -1.5,
+        );
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_float(2.5), BinOp::Sub, lit_int(1))),
+            1.5,
+        );
+
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_int(3), BinOp::Mul, lit_float(0.5))),
+            1.5,
+        );
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_float(0.5), BinOp::Mul, lit_int(4))),
+            2.0,
+        );
+
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_int(3), BinOp::Div, lit_float(2.0))),
+            1.5,
+        );
+        assert_float_eq(
+            expect_value(&mut env, binary(lit_float(3.0), BinOp::Div, lit_int(2))),
+            1.5,
+        );
+
+        // Ensure int / float zero is caught
+        let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::Div, lit_float(0.0)))
+            .expect_err("expected divide-by-zero for int / float zero");
+        assert!(matches!(err, EvalError::DivideByZero));
+    }
+
+    #[test]
+    fn mixed_numeric_comparisons() {
+        let mut env = Env::new();
+
+        let lt = expect_value(&mut env, binary(lit_int(1), BinOp::Lt, lit_float(1.5)));
+        assert_eq!(lt, Value::Bool(true));
+
+        let gt = expect_value(&mut env, binary(lit_float(1.5), BinOp::Gt, lit_int(2)));
+        assert_eq!(gt, Value::Bool(false));
+
+        let ge = expect_value(&mut env, binary(lit_float(2.0), BinOp::GtEq, lit_int(2)));
+        assert_eq!(ge, Value::Bool(true));
+
+        let le = expect_value(&mut env, binary(lit_int(2), BinOp::LtEq, lit_float(2.0)));
+        assert_eq!(le, Value::Bool(true));
+    }
+
+    #[test]
+    fn literal_patterns_prefer_specific_arm() {
+        let mut env = Env::new();
+        // generic arm
+        env.eval_stmt(&Stmt::FunctionDefinition {
+            name: "f".into(),
+            arms: vec![FuncArm {
+                params: vec![Pattern::Identifier("x".into())],
+                body: Expr::Identifier("x".into()),
+            }],
+        })
+        .unwrap();
+
+        // literal-specific arm
+        env.eval_stmt(&Stmt::FunctionDefinition {
+            name: "f".into(),
+            arms: vec![FuncArm {
+                params: vec![Pattern::Lit(Literal::Int(1))],
+                body: lit_int(42),
+            }],
+        })
+        .unwrap();
+
+        let result = eval_expr_stmt(&mut env, call("f", vec![lit_int(1)]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, Value::Int(42));
+
+        let result = eval_expr_stmt(&mut env, call("f", vec![lit_int(2)]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, Value::Int(2));
+    }
 }

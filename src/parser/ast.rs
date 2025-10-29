@@ -40,7 +40,6 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinOp {
-    Assign,
     And,
     BitAnd,
     Or,
