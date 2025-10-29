@@ -102,3 +102,17 @@ impl fmt::Display for TokenKind<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn span_into_source_span_preserves_offsets() {
+        let span = Span::new(2, 5);
+        let source_span = span.into_source_span();
+        let offset: usize = source_span.offset().into();
+        assert_eq!(offset, 2);
+        assert_eq!(source_span.len(), 3);
+    }
+}

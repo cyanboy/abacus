@@ -1,54 +1,11 @@
-use std::fmt;
-
 use thiserror::Error;
 
 use miette::{Diagnostic, SourceSpan};
 
-use crate::lexer::{
-    error::LexError,
-    token::{Span, TokenKind},
-};
-
-#[derive(Debug)]
-pub struct SpanLabel(pub Option<Span>);
-
-impl fmt::Display for SpanLabel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(span) = self.0 {
-            write!(f, " at byte {}", span.start)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl From<Option<Span>> for SpanLabel {
-    fn from(value: Option<Span>) -> Self {
-        SpanLabel(value)
-    }
-}
-
-impl SpanLabel {
-    pub fn into_source_span(self) -> Option<SourceSpan> {
-        self.0.map(|span| span.into_source_span())
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum ParseError<'a> {
-    #[error("Unexpected token: expected {expected}, found {found:?}{span}")]
-    UnexpectedToken {
-        expected: String,
-        found: Option<TokenKind<'a>>,
-        span: SpanLabel,
-    },
-
-    #[error("Lexer error: {0}")]
-    LexerError(#[from] LexError),
-}
+use crate::lexer::{error::LexError, token::Span};
 
 #[derive(Debug, Error, Diagnostic)]
-pub enum ParseDiagnostic {
+pub enum ParseError {
     #[error("Unexpected token: expected {expected}, found {found:?}")]
     #[diagnostic(code(parse::unexpected_token))]
     UnexpectedToken {
@@ -68,22 +25,73 @@ pub enum ParseDiagnostic {
     },
 }
 
-impl<'a> ParseError<'a> {
-    pub fn into_diagnostic(self) -> ParseDiagnostic {
-        match self {
+impl ParseError {
+    pub fn unexpected(
+        expected: impl Into<String>,
+        found: Option<String>,
+        span: Option<Span>,
+    ) -> Self {
+        ParseError::UnexpectedToken {
+            expected: expected.into(),
+            found,
+            span: span.map(Span::into_source_span),
+        }
+    }
+
+    pub fn unexpected_token(
+        expected: impl Into<String>,
+        token: Option<&crate::lexer::token::Token<'_>>,
+    ) -> Self {
+        let found = token.map(|tok| tok.kind.to_string());
+        let span = token.map(|tok| tok.span);
+        Self::unexpected(expected, found, span)
+    }
+}
+
+impl From<LexError> for ParseError {
+    fn from(error: LexError) -> Self {
+        let span = error.span().map(Span::into_source_span);
+        ParseError::LexerError { error, span }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::token::{Span, Token, TokenKind};
+
+    #[test]
+    fn unexpected_token_uses_owned_data() {
+        let token = Token::new(TokenKind::Identifier("foo"), Span::new(3, 6));
+        let err = ParseError::unexpected_token("identifier", Some(&token));
+        match err {
             ParseError::UnexpectedToken {
                 expected,
                 found,
-                span,
-            } => ParseDiagnostic::UnexpectedToken {
-                expected,
-                found: found.map(|tok| tok.to_string()),
-                span: span.into_source_span(),
-            },
-            ParseError::LexerError(error) => ParseDiagnostic::LexerError {
-                span: error.span().map(|sp| sp.into_source_span()),
-                error,
-            },
+                span: Some(span),
+            } => {
+                assert_eq!(expected, "identifier");
+                assert_eq!(found.as_deref(), Some("foo"));
+                let offset: usize = span.offset().into();
+                assert_eq!(offset, 3);
+                assert_eq!(span.len(), 3);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lexer_error_records_span() {
+        let err = ParseError::from(LexError::InvalidNumber { start: 1, end: 5 });
+        match err {
+            ParseError::LexerError {
+                span: Some(span), ..
+            } => {
+                let offset: usize = span.offset().into();
+                assert_eq!(offset, 1);
+                assert_eq!(span.len(), 4);
+            }
+            other => panic!("unexpected error: {other:?}"),
         }
     }
 }

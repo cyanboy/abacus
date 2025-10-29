@@ -9,7 +9,7 @@ pub mod ast;
 mod error;
 
 use ast::*;
-use error::{ParseError, SpanLabel};
+use error::ParseError;
 
 /// Single-statement parser for a REPL input.
 /// Wraps a `Lexer` that yields `Result<Token, LexError>` and exposes Pratt parsing.
@@ -27,38 +27,34 @@ impl<'a> Parser<'a> {
     }
 
     /// Entry point. Parse exactly one statement.
-    pub fn parse(&mut self) -> Result<Stmt, ParseError<'a>> {
+    pub fn parse(&mut self) -> Result<Stmt, ParseError> {
         let stmt = self.parse_stmt()?;
         if let Some(tok) = self.peek()? {
-            return Err(ParseError::UnexpectedToken {
-                expected: "end of input".into(),
-                found: Some(tok.kind.clone()),
-                span: Some(tok.span).into(),
-            });
+            return Err(ParseError::unexpected_token("end of input", Some(tok)));
         }
         Ok(stmt)
     }
 
     /// Peek next token without consuming. Propagate lexer errors.
-    fn peek(&mut self) -> Result<Option<&Token<'a>>, ParseError<'a>> {
+    fn peek(&mut self) -> Result<Option<&Token<'a>>, ParseError> {
         match self.lexer.peek() {
             Some(Ok(tok)) => Ok(Some(tok)),
-            Some(Err(e)) => Err(ParseError::LexerError(e.clone())),
+            Some(Err(e)) => Err(ParseError::from(e.clone())),
             None => Ok(None),
         }
     }
 
     /// Consume one token. Propagate lexer errors.
-    fn bump(&mut self) -> Result<Option<Token<'a>>, ParseError<'a>> {
+    fn bump(&mut self) -> Result<Option<Token<'a>>, ParseError> {
         match self.lexer.next() {
             Some(Ok(tok)) => Ok(Some(tok)),
-            Some(Err(e)) => Err(ParseError::LexerError(e)),
+            Some(Err(e)) => Err(ParseError::from(e)),
             None => Ok(None),
         }
     }
 
     /// If next token equals `expected`, consume it and return true.
-    fn eat(&mut self, expected: TokenKind<'a>) -> Result<bool, ParseError<'a>> {
+    fn eat(&mut self, expected: TokenKind<'a>) -> Result<bool, ParseError> {
         if matches!(self.peek()?, Some(t) if t.kind == expected) {
             self.bump()?;
             Ok(true)
@@ -67,31 +63,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_token(&mut self, expected: TokenKind<'a>) -> Result<Token<'a>, ParseError<'a>> {
+    fn expect_token(&mut self, expected: TokenKind<'a>) -> Result<Token<'a>, ParseError> {
         let expected_str = expected.to_string();
         match self.bump()? {
             Some(tok) if tok.kind == expected => Ok(tok),
-            Some(tok) => Err(ParseError::UnexpectedToken {
-                expected: expected_str,
-                found: Some(tok.kind),
-                span: Some(tok.span).into(),
-            }),
-            None => Err(ParseError::UnexpectedToken {
-                expected: expected_str,
-                found: None,
-                span: None.into(),
-            }),
+            Some(tok) => Err(ParseError::unexpected(
+                expected_str.clone(),
+                Some(tok.kind.to_string()),
+                Some(tok.span),
+            )),
+            None => Err(ParseError::unexpected(expected_str, None::<String>, None)),
         }
     }
 
     /// Require the next token to be `expected`. Error otherwise.
-    fn expect(&mut self, expected: TokenKind<'a>) -> Result<(), ParseError<'a>> {
+    fn expect(&mut self, expected: TokenKind<'a>) -> Result<(), ParseError> {
         self.expect_token(expected)?;
         Ok(())
     }
 
     /// stmt := func_def | assignment | expr
-    fn parse_stmt(&mut self) -> Result<Stmt, ParseError<'a>> {
+    fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         match self.peek()? {
             Some(tok) if matches!(tok.kind, TokenKind::Identifier(_)) => {
                 self.parse_stmt_starting_with_ident()
@@ -104,25 +96,21 @@ impl<'a> Parser<'a> {
     /// - `f(<patterns>) = <expr>` → function definition
     /// - `<name> = <expr>` → assignment
     /// - otherwise treat the identifier as the start of an expression
-    fn parse_stmt_starting_with_ident(&mut self) -> Result<Stmt, ParseError<'a>> {
+    fn parse_stmt_starting_with_ident(&mut self) -> Result<Stmt, ParseError> {
         // consume the leading name
         let (name, name_span) = match self.bump()? {
             Some(sp) => match sp.kind {
                 TokenKind::Identifier(s) => (s.to_string(), sp.span),
                 other => {
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "identifier".into(),
-                        found: Some(other),
-                        span: Some(sp.span).into(),
-                    });
+                    return Err(ParseError::unexpected(
+                        "identifier",
+                        Some(other.to_string()),
+                        Some(sp.span),
+                    ));
                 }
             },
             None => {
-                return Err(ParseError::UnexpectedToken {
-                    expected: "identifier".into(),
-                    found: None,
-                    span: None.into(),
-                });
+                return Err(ParseError::unexpected("identifier", None::<String>, None));
             }
         };
 
@@ -152,7 +140,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse `( p1, p2, ... )` after seeing the opening '(' already consumed.
-    fn parse_pattern_list(&mut self) -> Result<Vec<Pattern>, ParseError<'a>> {
+    fn parse_pattern_list(&mut self) -> Result<Vec<Pattern>, ParseError> {
         let mut params = Vec::new();
         // Empty parameter list `()`.
         if self.eat(TokenKind::CloseParen)? {
@@ -171,24 +159,20 @@ impl<'a> Parser<'a> {
     }
 
     /// pattern := identifier | literal
-    fn parse_pattern(&mut self) -> Result<Pattern, ParseError<'a>> {
+    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
         match self.bump()? {
             Some(Token { kind, span }) => match kind {
                 TokenKind::Identifier(s) => Ok(Pattern::Identifier(s.to_string())),
                 TokenKind::Integer(n) => Ok(Pattern::Lit(Literal::Int(n))),
                 TokenKind::Float(x) => Ok(Pattern::Lit(Literal::Float(x))),
                 TokenKind::Bool(b) => Ok(Pattern::Lit(Literal::Bool(b))),
-                other => Err(ParseError::UnexpectedToken {
-                    expected: "literal".to_string(),
-                    found: Some(other),
-                    span: Some(span).into(),
-                }),
+                other => Err(ParseError::unexpected(
+                    "literal",
+                    Some(other.to_string()),
+                    Some(span),
+                )),
             },
-            None => Err(ParseError::UnexpectedToken {
-                expected: "literal".to_string(),
-                found: None,
-                span: None.into(),
-            }),
+            None => Err(ParseError::unexpected("literal", None::<String>, None)),
         }
     }
 
@@ -197,7 +181,7 @@ impl<'a> Parser<'a> {
     /// - prefix unary ops: `!` and `-`
     /// - postfix call: `expr(args...)`
     /// - binary ops with precedence/associativity from `infix_bp`
-    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError<'a>> {
+    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
         let lhs = if let Some(tok) = self.peek()? {
             if let Some(op) = prefix_op(&tok.kind) {
                 let op_tok = match self.bump()? {
@@ -215,22 +199,14 @@ impl<'a> Parser<'a> {
                 self.parse_primary()?
             }
         } else {
-            return Err(ParseError::UnexpectedToken {
-                expected: "expression".to_string(),
-                found: None,
-                span: None.into(),
-            });
+            return Err(ParseError::unexpected("expression", None::<String>, None));
         };
 
         self.parse_expr_bp_with_lhs(lhs, min_bp)
     }
 
     /// Continue Pratt parsing when the caller already parsed an initial `lhs`.
-    fn parse_expr_bp_with_lhs(
-        &mut self,
-        mut lhs: Expr,
-        min_bp: u8,
-    ) -> Result<Expr, ParseError<'a>> {
+    fn parse_expr_bp_with_lhs(&mut self, mut lhs: Expr, min_bp: u8) -> Result<Expr, ParseError> {
         loop {
             // Postfix call
             if matches!(self.peek()?, Some(tok) if tok.kind == TokenKind::OpenParen) {
@@ -295,7 +271,7 @@ impl<'a> Parser<'a> {
     }
 
     /// primary := literal | identifier | '(' expr ')'
-    fn parse_primary(&mut self) -> Result<Expr, ParseError<'a>> {
+    fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.bump()? {
             Some(Token {
                 kind: TokenKind::Integer(n),
@@ -322,24 +298,19 @@ impl<'a> Parser<'a> {
                 let span = span_cover(open_span, close_tok.span);
                 Ok(Expr::Group(Box::new(expr), span))
             }
-            found => {
-                let (tok, span): (Option<_>, SpanLabel) = match found {
-                    Some(t) => (Some(t.kind), Some(t.span).into()),
-                    None => (None, None.into()),
-                };
-                Err(ParseError::UnexpectedToken {
-                    expected: "expression".to_string(),
-                    found: tok,
-                    span,
-                })
-            }
+            Some(Token { kind, span }) => Err(ParseError::unexpected(
+                "expression",
+                Some(kind.to_string()),
+                Some(span),
+            )),
+            None => Err(ParseError::unexpected("expression", None::<String>, None)),
         }
     }
 
     /// Lookahead from after an identifier:
     /// Return true if the next tokens are a parameter list `(...)`
     /// and the following token is `=`, indicating a function definition.
-    fn lookahead_func_def_after_params(&mut self) -> Result<bool, ParseError<'a>> {
+    fn lookahead_func_def_after_params(&mut self) -> Result<bool, ParseError> {
         let mut snap = self.lexer.clone();
         // require '('
         match snap.next() {
@@ -352,7 +323,7 @@ impl<'a> Parser<'a> {
         // scan to matching ')'
         let mut depth = 1usize;
         for next in snap.by_ref() {
-            let t = next.map_err(ParseError::LexerError)?;
+            let t = next.map_err(ParseError::from)?;
             match t.kind {
                 TokenKind::OpenParen => depth += 1,
                 TokenKind::CloseParen => {
@@ -427,7 +398,7 @@ mod tests {
     use super::*;
     use crate::lexer::token::Span;
 
-    fn parse<'a>(input: &'a str) -> Result<Stmt, ParseError<'a>> {
+    fn parse<'a>(input: &'a str) -> Result<Stmt, ParseError> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         parser.parse()
@@ -572,30 +543,36 @@ mod tests {
     #[test]
     fn rejects_trailing_tokens() {
         let err = parse("1 2").unwrap_err();
-        assert!(
-            matches!(
-                err,
-                ParseError::UnexpectedToken {
-                    ref expected,
-                    found: Some(TokenKind::Integer(2)),
-                    span: SpanLabel(Some(Span { start: 2, .. }))
-                } if expected == "end of input"
-            ),
-            "expected EOF error for trailing literal, got {err:?}"
-        );
+        if let ParseError::UnexpectedToken {
+            expected,
+            found,
+            span,
+        } = err
+        {
+            assert_eq!(expected, "end of input");
+            assert_eq!(found.as_deref(), Some("2"));
+            let span = span.expect("span present for trailing literal");
+            let offset: usize = span.offset().into();
+            assert_eq!(offset, 2);
+        } else {
+            panic!("expected EOF error for trailing literal, got {err:?}");
+        }
 
         let err = parse("f(x) y").unwrap_err();
-        assert!(
-            matches!(
-                err,
-                ParseError::UnexpectedToken {
-                    ref expected,
-                    found: Some(TokenKind::Identifier("y")),
-                    span: SpanLabel(Some(Span { start: 5, .. }))
-                } if expected == "end of input"
-            ),
-            "expected EOF error for trailing identifier, got {err:?}"
-        );
+        if let ParseError::UnexpectedToken {
+            expected,
+            found,
+            span,
+        } = err
+        {
+            assert_eq!(expected, "end of input");
+            assert_eq!(found.as_deref(), Some("y"));
+            let span = span.expect("span present for trailing identifier");
+            let offset: usize = span.offset().into();
+            assert_eq!(offset, 5);
+        } else {
+            panic!("expected EOF error for trailing identifier, got {err:?}");
+        }
     }
 
     fn expect_expr(stmt: Stmt) -> Expr {

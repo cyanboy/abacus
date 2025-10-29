@@ -89,4 +89,61 @@ impl Expr {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expr_span_matches_literal() {
+        let span = Span::new(0, 1);
+        let expr = Expr::Lit(Literal::Int(1), span);
+        assert_eq!(expr.span(), span);
+    }
+
+    #[test]
+    fn expr_span_matches_identifier() {
+        let span = Span::new(2, 5);
+        let expr = Expr::Identifier("foo".into(), span);
+        assert_eq!(expr.span(), span);
+    }
+
+    #[test]
+    fn expr_span_matches_unary() {
+        let span = Span::new(0, 2);
+        let expr = Expr::Unary {
+            op: UnaryOp::Neg,
+            span,
+            rhs: Box::new(Expr::Lit(Literal::Int(1), Span::new(1, 2))),
+        };
+        assert_eq!(expr.span(), span);
+    }
+
+    #[test]
+    fn expr_span_matches_binary() {
+        let span = Span::new(0, 3);
+        let expr = Expr::Binary {
+            lhs: Box::new(Expr::Lit(Literal::Int(1), Span::new(0, 1))),
+            op: BinOp::Add,
+            span,
+            rhs: Box::new(Expr::Lit(Literal::Int(2), Span::new(2, 3))),
+        };
+        assert_eq!(expr.span(), span);
+    }
+
+    #[test]
+    fn expr_span_matches_call() {
+        let span = Span::new(0, 4);
+        let expr = Expr::Call {
+            callee: Box::new(Expr::Identifier("f".into(), Span::new(0, 1))),
+            args: vec![Expr::Lit(Literal::Int(1), Span::new(2, 3))],
+            span,
+        };
+        assert_eq!(expr.span(), span);
+    }
+
+    #[test]
+    fn expr_span_matches_group() {
+        let span = Span::new(0, 4);
+        let expr = Expr::Group(Box::new(Expr::Lit(Literal::Int(1), Span::new(1, 2))), span);
+        assert_eq!(expr.span(), span);
+    }
+}

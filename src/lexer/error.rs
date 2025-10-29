@@ -21,3 +21,24 @@ impl LexError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unexpected_character_span_is_single_byte() {
+        let err = LexError::UnexpectedCharacter { pos: 4, ch: '@' };
+        let span = err.span().expect("span present");
+        assert_eq!(span.start, 4);
+        assert_eq!(span.end, 5);
+    }
+
+    #[test]
+    fn invalid_number_span_preserved() {
+        let err = LexError::InvalidNumber { start: 2, end: 7 };
+        let span = err.span().expect("span present");
+        assert_eq!(span.start, 2);
+        assert_eq!(span.end, 7);
+    }
+}

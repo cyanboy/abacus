@@ -41,7 +41,7 @@ fn main() {
                         }
                     },
                     Err(e) => {
-                        let report = Report::new(e.into_diagnostic())
+                        let report = Report::new(e)
                             .with_source_code(NamedSource::new("<repl>", input.to_string()));
                         eprintln!("{report:?}");
                     }

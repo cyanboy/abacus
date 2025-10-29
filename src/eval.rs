@@ -406,9 +406,13 @@ fn pattern_specificity(params: &[Pattern]) -> usize {
 mod tests {
     use super::*;
     use crate::{
-        lexer::token::Span,
-        parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt},
+        lexer::{Lexer, token::Span},
+        parser::{
+            Parser,
+            ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt},
+        },
     };
+    use miette::SourceSpan;
 
     fn dummy_span() -> Span {
         Span::new(0, 0)
@@ -623,5 +627,124 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, Value::Int(2));
+    }
+
+    #[test]
+    fn undefined_variable_error_carries_span() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("x+1");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected undefined var error");
+        match err {
+            EvalError::UndefinedVar {
+                name,
+                span: Some(span),
+            } => {
+                assert_eq!(name, "x");
+                assert_source_span(span, 0, 1);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn undefined_function_error_carries_span() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("foo()");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected undefined func error");
+        match err {
+            EvalError::UndefinedFunc {
+                name,
+                span: Some(span),
+            } => {
+                assert_eq!(name, "foo");
+                assert_source_span(span, 0, 3);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unary_type_error_reports_span() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("!1");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected type error");
+        match err {
+            EvalError::TypeError {
+                message,
+                span: Some(span),
+            } => {
+                assert_eq!(message, "invalid unary operand");
+                assert_source_span(span, 0, 2);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn boolean_binop_type_error_reports_span() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("1&&true");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected type error");
+        match err {
+            EvalError::TypeError {
+                message,
+                span: Some(span),
+            } => {
+                assert_eq!(message, "boolean operands must be bool");
+                assert_source_span(span, 0, 7);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_matching_arm_reports_span() {
+        let mut env = Env::new();
+        let definition = parse_stmt_with_spans("f(x, 1) = x");
+        env.eval_stmt(&definition).expect("function registers");
+
+        let expr = parse_expr_with_spans("f(0,0)");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected no matching arm");
+        match err {
+            EvalError::NoMatchingArm {
+                name,
+                span: Some(span),
+            } => {
+                assert_eq!(name, "f");
+                assert_source_span(span, 0, 6);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn divide_by_zero_reports_span() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("1/0");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected divide by zero");
+        match err {
+            EvalError::DivideByZero { span: Some(span) } => {
+                assert_source_span(span, 0, 3);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    fn parse_expr_with_spans(input: &str) -> Expr {
+        match parse_stmt_with_spans(input) {
+            Stmt::Expression(expr) => expr,
+            other => panic!("expected expression statement, got {other:?}"),
+        }
+    }
+
+    fn parse_stmt_with_spans(input: &str) -> Stmt {
+        let mut parser = Parser::new(Lexer::new(input));
+        parser.parse().expect("parse succeeds")
+    }
+
+    fn assert_source_span(span: SourceSpan, start: usize, len: usize) {
+        let offset: usize = span.offset().into();
+        assert_eq!(offset, start, "unexpected span offset");
+        assert_eq!(span.len(), len, "unexpected span length");
     }
 }
