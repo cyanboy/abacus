@@ -1,0 +1,201 @@
+use std::borrow::Cow::{Borrowed, Owned};
+
+use miette::{GraphicalReportHandler, Report};
+use rustyline::{
+    Editor,
+    completion::Completer,
+    config::{ColorMode, Configurer},
+    highlight::{CmdKind, Highlighter},
+    hint::Hinter,
+    history::DefaultHistory,
+    validate::Validator,
+};
+use unicode_width::UnicodeWidthStr;
+
+use crate::{
+    eval::Value,
+    lexer::{
+        Lexer,
+        token::{Token, TokenKind},
+    },
+};
+
+const COLOR_RESET: &str = "\x1b[0m";
+const COLOR_NUMBER: &str = "\x1b[93m";
+const COLOR_FUNCTION: &str = "\x1b[96m";
+const COLOR_OPERATOR: &str = "\x1b[94m";
+
+#[derive(Clone, Copy)]
+pub struct ReplHelper;
+
+impl rustyline::Helper for ReplHelper {}
+
+impl Completer for ReplHelper {
+    type Candidate = String;
+}
+
+impl Hinter for ReplHelper {
+    type Hint = String;
+}
+
+impl Validator for ReplHelper {}
+
+impl Highlighter for ReplHelper {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
+        let mut lexer = Lexer::new(line);
+        let mut tokens = Vec::new();
+        while let Some(token_result) = lexer.next() {
+            match token_result {
+                Ok(token) => tokens.push(token),
+                Err(_) => return Borrowed(line),
+            }
+        }
+
+        if tokens.is_empty() {
+            return Borrowed(line);
+        }
+
+        let mut highlighted = String::with_capacity(line.len());
+        let mut cursor = 0;
+        let mut colored = false;
+
+        for (idx, token) in tokens.iter().enumerate() {
+            let span = token.span;
+            if span.start > cursor {
+                highlighted.push_str(&line[cursor..span.start]);
+            }
+
+            let segment = &line[span.start..span.end];
+            if let Some(color) = highlight_color(&tokens, idx) {
+                highlighted.push_str(color);
+                highlighted.push_str(segment);
+                highlighted.push_str(COLOR_RESET);
+                colored = true;
+            } else {
+                highlighted.push_str(segment);
+            }
+
+            cursor = span.end;
+        }
+
+        if cursor < line.len() {
+            highlighted.push_str(&line[cursor..]);
+        }
+
+        if colored {
+            Owned(highlighted)
+        } else {
+            Borrowed(line)
+        }
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        true
+    }
+}
+
+pub type ReplEditor = Editor<ReplHelper, DefaultHistory>;
+
+pub fn create_editor() -> rustyline::Result<ReplEditor> {
+    let mut rl = Editor::<ReplHelper, DefaultHistory>::new()?;
+    rl.set_helper(Some(ReplHelper));
+    rl.set_color_mode(ColorMode::Forced);
+    Ok(rl)
+}
+
+pub fn format_value(value: &Value) -> String {
+    let color = match value {
+        Value::Int(_) | Value::Float(_) | Value::Bool(_) => COLOR_NUMBER,
+    };
+    format!("{color}{value}{COLOR_RESET}")
+}
+
+pub fn print_report(message: &str, source: &str, report: Report) {
+    eprintln!("Error: {message}");
+
+    let handler = GraphicalReportHandler::new().without_cause_chain();
+    let mut rendered = String::new();
+    if handler
+        .render_report(&mut rendered, report.as_ref())
+        .is_err()
+    {
+        render_fallback(source, &report);
+        return;
+    }
+
+    let output_lines: Vec<&str> = rendered
+        .lines()
+        .skip_while(|line| {
+            let trimmed = line.trim();
+            trimmed.is_empty() || trimmed.ends_with(message)
+        })
+        .collect();
+
+    if output_lines.is_empty() {
+        render_fallback(source, &report);
+        return;
+    }
+
+    eprintln!();
+    eprintln!("{}", output_lines.join("\n"));
+}
+
+fn render_fallback(source: &str, report: &Report) {
+    if source.is_empty() {
+        return;
+    }
+
+    let label_offset = report
+        .labels()
+        .and_then(|labels| {
+            let labels: Vec<_> = labels.collect();
+            labels
+                .iter()
+                .find(|label| label.primary())
+                .or_else(|| labels.first())
+                .map(|label| label.offset())
+        })
+        .unwrap_or_else(|| source.len());
+    let byte_index = label_offset.min(source.len());
+    let prefix = &source[..byte_index];
+    let caret_pad = " ".repeat(UnicodeWidthStr::width(prefix));
+
+    eprintln!();
+    eprintln!("  1 | {source}");
+    eprintln!("    | {caret_pad}^");
+}
+
+fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<&'static str> {
+    match tokens[index].kind {
+        TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(COLOR_NUMBER),
+        TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(COLOR_FUNCTION),
+        TokenKind::Assign
+        | TokenKind::Plus
+        | TokenKind::Minus
+        | TokenKind::Star
+        | TokenKind::Slash
+        | TokenKind::Percent
+        | TokenKind::Bang
+        | TokenKind::Caret
+        | TokenKind::Eq
+        | TokenKind::Gt
+        | TokenKind::GtEq
+        | TokenKind::Lt
+        | TokenKind::LtEq
+        | TokenKind::Ne
+        | TokenKind::BitOr
+        | TokenKind::Or
+        | TokenKind::BitAnd
+        | TokenKind::And
+        | TokenKind::OpenParen
+        | TokenKind::CloseParen => Some(COLOR_OPERATOR),
+        _ => None,
+    }
+}
+
+fn is_function_name<'a>(tokens: &[Token<'a>], index: usize) -> bool {
+    matches!(
+        tokens.get(index + 1).map(|next| &next.kind),
+        Some(TokenKind::OpenParen)
+    )
+}
