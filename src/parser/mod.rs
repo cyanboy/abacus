@@ -550,7 +550,7 @@ mod tests {
         } = err
         {
             assert_eq!(expected, "end of input");
-            assert_eq!(found.as_deref(), Some("2"));
+            assert_eq!(found, "'2'");
             let span = span.expect("span present for trailing literal");
             let offset: usize = span.offset().into();
             assert_eq!(offset, 2);
@@ -566,7 +566,7 @@ mod tests {
         } = err
         {
             assert_eq!(expected, "end of input");
-            assert_eq!(found.as_deref(), Some("y"));
+            assert_eq!(found, "'y'");
             let span = span.expect("span present for trailing identifier");
             let offset: usize = span.offset().into();
             assert_eq!(offset, 5);

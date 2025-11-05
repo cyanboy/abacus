@@ -6,17 +6,15 @@ use crate::lexer::{error::LexError, token::Span};
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum ParseError {
-    #[error("Unexpected token: expected {expected}, found {found:?}")]
-    #[diagnostic(code(parse::unexpected_token))]
+    #[error("Unexpected token: expected {expected}, found {found}")]
     UnexpectedToken {
         expected: String,
-        found: Option<String>,
+        found: String,
         #[label("unexpected token")]
         span: Option<SourceSpan>,
     },
 
     #[error("Lexer error: {error}")]
-    #[diagnostic(code(parse::lexer_error))]
     LexerError {
         #[source]
         error: LexError,
@@ -33,7 +31,7 @@ impl ParseError {
     ) -> Self {
         ParseError::UnexpectedToken {
             expected: expected.into(),
-            found,
+            found: format_found(found),
             span: span.map(Span::into_source_span),
         }
     }
@@ -45,6 +43,13 @@ impl ParseError {
         let found = token.map(|tok| tok.kind.to_string());
         let span = token.map(|tok| tok.span);
         Self::unexpected(expected, found, span)
+    }
+}
+
+fn format_found(found: Option<String>) -> String {
+    match found {
+        Some(f) => format!("'{f}'"),
+        None => "end of input".to_string(),
     }
 }
 
@@ -71,7 +76,7 @@ mod tests {
                 span: Some(span),
             } => {
                 assert_eq!(expected, "identifier");
-                assert_eq!(found.as_deref(), Some("foo"));
+                assert_eq!(found, "'foo'");
                 let offset: usize = span.offset().into();
                 assert_eq!(offset, 3);
                 assert_eq!(span.len(), 3);

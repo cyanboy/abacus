@@ -8,7 +8,6 @@ use crate::{lexer::token::Span, parser::ast::*};
 #[derive(Debug, Error, Diagnostic)]
 pub enum EvalError {
     #[error("undefined variable: {name}")]
-    #[diagnostic(code(eval::undefined_variable))]
     UndefinedVar {
         name: String,
         #[label("not defined here")]
@@ -16,7 +15,6 @@ pub enum EvalError {
     },
 
     #[error("undefined function: {name}")]
-    #[diagnostic(code(eval::undefined_function))]
     UndefinedFunc {
         name: String,
         #[label("not defined here")]
@@ -24,7 +22,6 @@ pub enum EvalError {
     },
 
     #[error("no matching arm for function: {name}")]
-    #[diagnostic(code(eval::no_matching_arm))]
     NoMatchingArm {
         name: String,
         #[label("no matching arm")]
@@ -32,7 +29,6 @@ pub enum EvalError {
     },
 
     #[error("type error: {message}")]
-    #[diagnostic(code(eval::type_error))]
     TypeError {
         message: &'static str,
         #[label("type error")]
@@ -40,7 +36,6 @@ pub enum EvalError {
     },
 
     #[error("division by zero")]
-    #[diagnostic(code(eval::divide_by_zero))]
     DivideByZero {
         #[label("division by zero")]
         span: Option<SourceSpan>,

@@ -1,4 +1,4 @@
-use miette::{NamedSource, Report};
+use miette::{GraphicalReportHandler, NamedSource, Report};
 use rustyline::DefaultEditor;
 
 mod eval;
@@ -35,15 +35,17 @@ fn main() {
                         Ok(Some(v)) => println!("{v}"),
                         Ok(None) => {}
                         Err(e) => {
+                            let message = e.to_string();
                             let report = Report::new(e)
                                 .with_source_code(NamedSource::new("<repl>", input.to_string()));
-                            eprintln!("{report:?}");
+                            print_report(&message, report);
                         }
                     },
                     Err(e) => {
+                        let message = e.to_string();
                         let report = Report::new(e)
                             .with_source_code(NamedSource::new("<repl>", input.to_string()));
-                        eprintln!("{report:?}");
+                        print_report(&message, report);
                     }
                 }
             }
@@ -53,4 +55,40 @@ fn main() {
             }
         }
     }
+}
+
+fn print_report(message: &str, report: Report) {
+    eprintln!("Error: {message}");
+
+    let handler = GraphicalReportHandler::new().without_cause_chain();
+    let mut rendered = String::new();
+    if handler
+        .render_report(&mut rendered, report.as_ref())
+        .is_err()
+    {
+        return;
+    }
+
+    let mut output_lines = Vec::new();
+    let mut skipped_header = false;
+    for line in rendered.lines() {
+        let trimmed = line.trim();
+        if !skipped_header {
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed.ends_with(message) {
+                skipped_header = true;
+                continue;
+            }
+        }
+        output_lines.push(line);
+    }
+
+    if output_lines.is_empty() {
+        return;
+    }
+
+    eprintln!();
+    eprintln!("{}", output_lines.join("\n"));
 }
