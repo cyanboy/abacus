@@ -12,8 +12,15 @@ use crate::{
     repl::{create_editor, format_value, print_report},
 };
 
+const TITLE: &str = "Abacus - Calculator REPL";
+const TITLE_COLORS: &[&str] = &[
+    "\x1b[31m", "\x1b[33m", "\x1b[32m", "\x1b[36m", "\x1b[34m", "\x1b[35m",
+];
+const COLOR_RESET: &str = "\x1b[0m";
+const COLOR_BOLD: &str = "\x1b[1m";
+
 fn main() {
-    println!("Abacus - Calculator REPL");
+    println!("{}", colorize_title(TITLE));
     println!("Type expressions or 'quit' to exit\n");
 
     let mut rl = create_editor().expect("failed to initialize REPL editor");
@@ -67,6 +74,28 @@ fn main() {
             }
         }
     }
+}
+
+fn colorize_title(title: &str) -> String {
+    let mut colored = String::with_capacity(title.len() * (COLOR_BOLD.len() + COLOR_RESET.len()));
+    let mut title_chars = title.splitn(2, ' ');
+    let name = title_chars.next().unwrap_or(title);
+    let rest = title_chars.next().unwrap_or("");
+
+    for (i, ch) in name.chars().enumerate() {
+        let color = TITLE_COLORS[i % TITLE_COLORS.len()];
+        colored.push_str(COLOR_BOLD);
+        colored.push_str(color);
+        colored.push(ch);
+    }
+    colored.push_str(COLOR_RESET);
+
+    if !rest.is_empty() {
+        colored.push(' ');
+        colored.push_str(rest);
+    }
+
+    colored
 }
 
 enum PromptState {
