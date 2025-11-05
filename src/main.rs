@@ -1,23 +1,27 @@
-use miette::{GraphicalReportHandler, NamedSource, Report};
-use rustyline::DefaultEditor;
-use unicode_width::UnicodeWidthStr;
+use miette::{NamedSource, Report};
 
 mod eval;
 mod lexer;
 mod parser;
+mod repl;
 
-use crate::{eval::Env, lexer::Lexer, parser::Parser};
+use crate::{
+    eval::Env,
+    lexer::Lexer,
+    parser::Parser,
+    repl::{create_editor, format_value, print_report},
+};
 
 fn main() {
     println!("Abacus - Calculator REPL");
     println!("Type expressions or 'quit' to exit\n");
 
-    let mut rl = DefaultEditor::new().unwrap();
-
+    let mut rl = create_editor().expect("failed to initialize REPL editor");
     let mut env = Env::new();
+    let mut prompt_state = PromptState::Ready;
 
     loop {
-        match rl.readline("> ") {
+        match rl.readline(prompt_state.prompt()) {
             Ok(line) => {
                 let input = line.trim();
                 if input.is_empty() {
@@ -33,13 +37,19 @@ fn main() {
                 let mut parser = Parser::new(Lexer::new(input));
                 match parser.parse() {
                     Ok(stmt) => match env.eval_stmt(&stmt) {
-                        Ok(Some(v)) => println!("{v}"),
-                        Ok(None) => {}
+                        Ok(Some(v)) => {
+                            println!("{}", format_value(&v));
+                            prompt_state.mark_ready();
+                        }
+                        Ok(None) => {
+                            prompt_state.mark_ready();
+                        }
                         Err(e) => {
                             let message = e.to_string();
                             let report = Report::new(e)
                                 .with_source_code(NamedSource::new("<repl>", input.to_string()));
                             print_report(&message, input, report);
+                            prompt_state.mark_error();
                         }
                     },
                     Err(e) => {
@@ -47,6 +57,7 @@ fn main() {
                         let report = Report::new(e)
                             .with_source_code(NamedSource::new("<repl>", input.to_string()));
                         print_report(&message, input, report);
+                        prompt_state.mark_error();
                     }
                 }
             }
@@ -58,57 +69,35 @@ fn main() {
     }
 }
 
-fn print_report(message: &str, source: &str, report: Report) {
-    eprintln!("Error: {message}");
-
-    let handler = GraphicalReportHandler::new().without_cause_chain();
-    let mut rendered = String::new();
-    if handler
-        .render_report(&mut rendered, report.as_ref())
-        .is_err()
-    {
-        render_fallback(source, &report);
-        return;
-    }
-
-    let output_lines: Vec<&str> = rendered
-        .lines()
-        .skip_while(|line| {
-            let trimmed = line.trim();
-            trimmed.is_empty() || trimmed.ends_with(message)
-        })
-        .collect();
-
-    if output_lines.is_empty() {
-        render_fallback(source, &report);
-        return;
-    }
-
-    eprintln!();
-    eprintln!("{}", output_lines.join("\n"));
+enum PromptState {
+    Ready,
+    Error,
+    Warning,
 }
 
-fn render_fallback(source: &str, report: &Report) {
-    if source.is_empty() {
-        return;
+impl PromptState {
+    fn prompt(&self) -> &'static str {
+        match self {
+            PromptState::Ready => PROMPT_READY,
+            PromptState::Error => PROMPT_ERROR,
+            PromptState::Warning => PROMPT_WARNING,
+        }
     }
 
-    let label_offset = report
-        .labels()
-        .and_then(|labels| {
-            let labels: Vec<_> = labels.collect();
-            labels
-                .iter()
-                .find(|label| label.primary())
-                .or_else(|| labels.first())
-                .map(|label| label.offset())
-        })
-        .unwrap_or_else(|| source.len());
-    let byte_index = label_offset.min(source.len());
-    let prefix = &source[..byte_index];
-    let caret_pad = " ".repeat(UnicodeWidthStr::width(prefix));
+    fn mark_ready(&mut self) {
+        *self = PromptState::Ready;
+    }
 
-    eprintln!();
-    eprintln!("  1 | {source}");
-    eprintln!("    | {caret_pad}^");
+    fn mark_error(&mut self) {
+        *self = PromptState::Error;
+    }
+
+    #[allow(dead_code)]
+    fn mark_warning(&mut self) {
+        *self = PromptState::Warning;
+    }
 }
+
+const PROMPT_READY: &str = "\x1b[32m> \x1b[0m";
+const PROMPT_ERROR: &str = "\x1b[31m> \x1b[0m";
+const PROMPT_WARNING: &str = "\x1b[33m> \x1b[0m";
