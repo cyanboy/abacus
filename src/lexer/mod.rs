@@ -129,62 +129,29 @@ impl<'a> Lexer<'a> {
         let mut end = start + first.len_utf8();
         let mut is_decimal = false;
 
-        // Integer or fractional part
-        while let Some(&(idx, c)) = self.chars.peek() {
-            match c {
-                '0'..='9' => {
-                    end = idx + c.len_utf8();
-                    self.chars.next();
-                }
-                '.' if !is_decimal => {
-                    is_decimal = true;
-                    end = idx + c.len_utf8();
-                    self.chars.next();
-                }
-                _ => break,
-            }
+        self.consume_digits(&mut end);
+
+        if self.consume_fraction(&mut end) {
+            is_decimal = true;
         }
 
-        // Optional exponent part: [eE][+-]?[0-9]+
-        if let Some(&(i, c @ ('e' | 'E'))) = self.chars.peek() {
-            self.chars.next();
-            end = i + c.len_utf8();
-            is_decimal = true; // presence of exponent forces float
-
-            // Optional sign in exponent
-            if let Some(&(_, s @ ('+' | '-'))) = self.chars.peek() {
-                self.chars.next();
-                end = i + s.len_utf8();
-            }
-
-            // At least one digit of exponent
-            let mut saw_digit = false;
-            while let Some(&(i, d)) = self.chars.peek() {
-                if d.is_ascii_digit() {
-                    self.chars.next();
-                    end = i + d.len_utf8();
-                    saw_digit = true;
-                } else {
-                    break;
-                }
-            }
-
-            if !saw_digit {
-                return Err(LexError::InvalidNumber { start, end });
-            }
+        if self.consume_exponent(start, &mut end)? {
+            is_decimal = true;
         }
 
-        // Parse the captured substring
-        let s = &self.s[start..end];
+        let slice = &self.s[start..end];
         let token = if is_decimal {
-            s.parse()
+            slice
+                .parse()
                 .map(Float)
                 .map_err(|_| LexError::InvalidNumber { start, end })
         } else {
-            s.parse()
+            slice
+                .parse()
                 .map(Integer)
                 .map_err(|_| LexError::InvalidNumber { start, end })
         }?;
+
         Ok((token, end))
     }
 
@@ -208,6 +175,49 @@ impl<'a> Lexer<'a> {
             ident => TokenKind::Identifier(ident),
         };
         (token, end)
+    }
+
+    fn consume_digits(&mut self, end: &mut usize) -> bool {
+        let mut consumed = false;
+        while let Some(&(idx, c)) = self.chars.peek() {
+            if c.is_ascii_digit() {
+                self.chars.next();
+                *end = idx + c.len_utf8();
+                consumed = true;
+            } else {
+                break;
+            }
+        }
+        consumed
+    }
+
+    fn consume_fraction(&mut self, end: &mut usize) -> bool {
+        if let Some(&(dot_idx, '.')) = self.chars.peek() {
+            self.chars.next();
+            *end = dot_idx + 1;
+            self.consume_digits(end);
+            return true;
+        }
+        false
+    }
+
+    fn consume_exponent(&mut self, start: usize, end: &mut usize) -> Result<bool, LexError> {
+        if let Some(&(exp_idx, c @ ('e' | 'E'))) = self.chars.peek() {
+            self.chars.next();
+            *end = exp_idx + c.len_utf8();
+
+            if let Some(&(sign_idx, sign @ ('+' | '-'))) = self.chars.peek() {
+                self.chars.next();
+                *end = sign_idx + sign.len_utf8();
+            }
+
+            if !self.consume_digits(end) {
+                return Err(LexError::InvalidNumber { start, end: *end });
+            }
+
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
@@ -387,5 +397,22 @@ mod tests {
 
         // After error, we are at EOF
         assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn invalid_number_span_covers_sign() {
+        let mut lexer = Lexer::new("1e+");
+        let err = lexer
+            .next()
+            .expect("token or error")
+            .expect_err("expected invalid number");
+
+        match err {
+            LexError::InvalidNumber { start, end } => {
+                assert_eq!(start, 0);
+                assert_eq!(end, 3);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

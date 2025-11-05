@@ -1,5 +1,6 @@
 use miette::{GraphicalReportHandler, NamedSource, Report};
 use rustyline::DefaultEditor;
+use unicode_width::UnicodeWidthStr;
 
 mod eval;
 mod lexer;
@@ -38,14 +39,14 @@ fn main() {
                             let message = e.to_string();
                             let report = Report::new(e)
                                 .with_source_code(NamedSource::new("<repl>", input.to_string()));
-                            print_report(&message, report);
+                            print_report(&message, input, report);
                         }
                     },
                     Err(e) => {
                         let message = e.to_string();
                         let report = Report::new(e)
                             .with_source_code(NamedSource::new("<repl>", input.to_string()));
-                        print_report(&message, report);
+                        print_report(&message, input, report);
                     }
                 }
             }
@@ -57,7 +58,7 @@ fn main() {
     }
 }
 
-fn print_report(message: &str, report: Report) {
+fn print_report(message: &str, source: &str, report: Report) {
     eprintln!("Error: {message}");
 
     let handler = GraphicalReportHandler::new().without_cause_chain();
@@ -66,29 +67,48 @@ fn print_report(message: &str, report: Report) {
         .render_report(&mut rendered, report.as_ref())
         .is_err()
     {
+        render_fallback(source, &report);
         return;
     }
 
-    let mut output_lines = Vec::new();
-    let mut skipped_header = false;
-    for line in rendered.lines() {
-        let trimmed = line.trim();
-        if !skipped_header {
-            if trimmed.is_empty() {
-                continue;
-            }
-            if trimmed.ends_with(message) {
-                skipped_header = true;
-                continue;
-            }
-        }
-        output_lines.push(line);
-    }
+    let output_lines: Vec<&str> = rendered
+        .lines()
+        .skip_while(|line| {
+            let trimmed = line.trim();
+            trimmed.is_empty() || trimmed.ends_with(message)
+        })
+        .collect();
 
     if output_lines.is_empty() {
+        render_fallback(source, &report);
         return;
     }
 
     eprintln!();
     eprintln!("{}", output_lines.join("\n"));
+}
+
+fn render_fallback(source: &str, report: &Report) {
+    if source.is_empty() {
+        return;
+    }
+
+    let label_offset = report
+        .labels()
+        .and_then(|labels| {
+            let labels: Vec<_> = labels.collect();
+            labels
+                .iter()
+                .find(|label| label.primary())
+                .or_else(|| labels.first())
+                .map(|label| label.offset())
+        })
+        .unwrap_or_else(|| source.len());
+    let byte_index = label_offset.min(source.len());
+    let prefix = &source[..byte_index];
+    let caret_pad = " ".repeat(UnicodeWidthStr::width(prefix));
+
+    eprintln!();
+    eprintln!("  1 | {source}");
+    eprintln!("    | {caret_pad}^");
 }
