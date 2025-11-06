@@ -13,17 +13,13 @@ use rustyline::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
+    colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, RESET, VALUE_OUTPUT},
     eval::Value,
     lexer::{
         Lexer,
         token::{Token, TokenKind},
     },
 };
-
-const COLOR_RESET: &str = "\x1b[0m";
-const COLOR_NUMBER: &str = "\x1b[93m";
-const COLOR_FUNCTION: &str = "\x1b[96m";
-const COLOR_OPERATOR: &str = "\x1b[94m";
 
 #[derive(Clone, Copy)]
 pub struct ReplHelper;
@@ -69,7 +65,7 @@ impl Highlighter for ReplHelper {
             if let Some(color) = highlight_color(&tokens, idx) {
                 highlighted.push_str(color);
                 highlighted.push_str(segment);
-                highlighted.push_str(COLOR_RESET);
+                highlighted.push_str(RESET);
                 colored = true;
             } else {
                 highlighted.push_str(segment);
@@ -104,10 +100,10 @@ pub fn create_editor() -> rustyline::Result<ReplEditor> {
 }
 
 pub fn format_value(value: &Value) -> String {
-    let color = match value {
-        Value::Int(_) | Value::Float(_) | Value::Bool(_) => COLOR_NUMBER,
+    let style = match value {
+        Value::Int(_) | Value::Float(_) | Value::Bool(_) => VALUE_OUTPUT,
     };
-    format!("{color}{value}{COLOR_RESET}")
+    format!("{style}{value}{RESET}")
 }
 
 pub fn print_report(message: &str, source: &str, report: Report) {
@@ -167,8 +163,8 @@ fn render_fallback(source: &str, report: &Report) {
 
 fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<&'static str> {
     match tokens[index].kind {
-        TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(COLOR_NUMBER),
-        TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(COLOR_FUNCTION),
+        TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(LITERAL_YELLOW),
+        TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(FUNCTION_CYAN),
         TokenKind::Assign
         | TokenKind::Plus
         | TokenKind::Minus
@@ -188,7 +184,7 @@ fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<&'static st
         | TokenKind::BitAnd
         | TokenKind::And
         | TokenKind::OpenParen
-        | TokenKind::CloseParen => Some(COLOR_OPERATOR),
+        | TokenKind::CloseParen => Some(OPERATOR_BLUE),
         _ => None,
     }
 }
