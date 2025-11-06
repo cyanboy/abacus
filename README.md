@@ -17,7 +17,7 @@ cargo install abacus
 Need a bleeding-edge build? Install directly from the repository:
 
 ```bash
-cargo install --locked --git https://github.com/yourname/abacus
+cargo install --locked --git https://github.com/cyanboy/abacus
 ```
 
 ---
