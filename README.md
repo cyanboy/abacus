@@ -6,6 +6,16 @@ Abacus is a small, expressive calculator language for quick experiments and teac
 
 ---
 
+## Highlights
+
+- Persistent REPL environment with history and an ANSI-colored prompt.
+- 64-bit integers, double-precision floats, and booleans with straightforward formatting.
+- Arithmetic, comparison, logical, and bitwise operators with predictable precedence.
+- Pattern-matched function arms: mix literals and identifiers and the most specific match runs.
+- Helpful diagnostics that underline exactly where evaluation failed.
+
+---
+
 ## Install
 
 ### Cargo
@@ -37,16 +47,6 @@ Type expressions or 'quit' to exit
 > odd(41)
 true
 ```
-
----
-
-## Highlights
-
-- Persistent REPL environment with history and an ANSI-colored prompt.
-- 64-bit integers, double-precision floats, and booleans with straightforward formatting.
-- Arithmetic, comparison, logical, and bitwise operators with predictable precedence.
-- Pattern-matched function arms: mix literals and identifiers and the most specific match runs.
-- Helpful diagnostics that underline exactly where evaluation failed.
 
 ---
 
