@@ -73,17 +73,6 @@ cargo build
 
 ---
 
-## Contributing
-
-Pull requests are welcome.
-
-1. Fork and clone the repo.
-2. Create a feature branch (`git checkout -b feature/idea`).
-3. Add tests and keep `cargo fmt`/`cargo clippy` clean.
-4. Open a pull request with a short summary of the change.
-
----
-
 ## License
 
 This project is licensed under the [MIT License](./LICENSE.md).
