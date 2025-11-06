@@ -1,117 +1,24 @@
-use std::{collections::HashMap, fmt, rc::Rc};
-use thiserror::Error;
+use std::{collections::HashMap, rc::Rc};
 
-use miette::{Diagnostic, SourceSpan};
+use crate::{
+    lexer::token::Span,
+    parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt, UnaryOp},
+};
 
-use crate::{lexer::token::Span, parser::ast::*};
-
-#[derive(Debug, Error, Diagnostic)]
-pub enum EvalError {
-    #[error("undefined variable: {name}")]
-    UndefinedVar {
-        name: String,
-        #[label("not defined here")]
-        span: Option<SourceSpan>,
-    },
-
-    #[error("undefined function: {name}")]
-    UndefinedFunc {
-        name: String,
-        #[label("not defined here")]
-        span: Option<SourceSpan>,
-    },
-
-    #[error("no matching arm for function: {name}")]
-    NoMatchingArm {
-        name: String,
-        #[label("no matching arm")]
-        span: Option<SourceSpan>,
-    },
-
-    #[error("type error: {message}")]
-    TypeError {
-        message: &'static str,
-        #[label("type error")]
-        span: Option<SourceSpan>,
-    },
-
-    #[error("division by zero")]
-    DivideByZero {
-        #[label("division by zero")]
-        span: Option<SourceSpan>,
-    },
-}
-
-impl EvalError {
-    fn undefined_var(name: String, span: Span) -> Self {
-        Self::UndefinedVar {
-            name,
-            span: Some(span.into_source_span()),
-        }
-    }
-
-    fn undefined_func(name: String, span: Span) -> Self {
-        Self::UndefinedFunc {
-            name,
-            span: Some(span.into_source_span()),
-        }
-    }
-
-    fn no_matching_arm(name: String, span: Span) -> Self {
-        Self::NoMatchingArm {
-            name,
-            span: Some(span.into_source_span()),
-        }
-    }
-
-    fn type_error(message: &'static str, span: Span) -> Self {
-        Self::TypeError {
-            message,
-            span: Some(span.into_source_span()),
-        }
-    }
-
-    fn divide_by_zero(span: Span) -> Self {
-        Self::DivideByZero {
-            span: Some(span.into_source_span()),
-        }
-    }
-
-    fn with_span(self, span: Span) -> Self {
-        let span = Some(span.into_source_span());
-        match self {
-            EvalError::UndefinedVar { name, .. } => EvalError::UndefinedVar { name, span },
-            EvalError::UndefinedFunc { name, .. } => EvalError::UndefinedFunc { name, span },
-            EvalError::NoMatchingArm { name, .. } => EvalError::NoMatchingArm { name, span },
-            EvalError::TypeError { message, .. } => EvalError::TypeError { message, span },
-            EvalError::DivideByZero { .. } => EvalError::DivideByZero { span },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Int(v) => write!(f, "{v}"),
-            Value::Float(v) => write!(f, "{v}"),
-            Value::Bool(v) => write!(f, "{v}"),
-        }
-    }
-}
+use super::{error::EvalError, value::Value};
 
 #[derive(Debug)]
 pub struct Env {
     // scope stack: global frame at index 0; top is current frame
     scopes: Vec<HashMap<String, Value>>,
     // function name -> list of arms (pattern + body) ordered by specificity
-    funcs: HashMap<String, Vec<Rc<FuncArm>>>,
+    funcs: HashMap<String, Vec<FuncEntry>>,
+}
+
+#[derive(Debug)]
+struct FuncEntry {
+    arm: Rc<FuncArm>,
+    specificity: usize,
 }
 
 impl Default for Env {
@@ -136,12 +43,15 @@ impl Env {
         }
         None
     }
+
     fn set_var(&mut self, name: String, v: Value) {
         self.scopes.last_mut().unwrap().insert(name, v);
     }
+
     fn push_frame(&mut self, bindings: HashMap<String, Value>) {
         self.scopes.push(bindings);
     }
+
     fn pop_frame(&mut self) {
         self.scopes.pop();
     }
@@ -155,10 +65,21 @@ impl Env {
             }
             Stmt::FunctionDefinition { name, arms } => {
                 let entry = self.funcs.entry(name.clone()).or_default();
-                entry.extend(arms.iter().cloned().map(Rc::new));
-                entry.sort_by(|a, b| {
-                    pattern_specificity(&b.params).cmp(&pattern_specificity(&a.params))
-                });
+                for arm in arms.iter() {
+                    let specificity = pattern_specificity(&arm.params);
+                    let rc = Rc::new(arm.clone());
+                    let insert_idx = entry
+                        .iter()
+                        .position(|existing| existing.specificity < specificity)
+                        .unwrap_or(entry.len());
+                    entry.insert(
+                        insert_idx,
+                        FuncEntry {
+                            arm: rc,
+                            specificity,
+                        },
+                    );
+                }
                 Ok(None)
             }
             Stmt::Expression(e) => self.eval_expr(e).map(Some),
@@ -200,11 +121,10 @@ impl Env {
                     }
                 };
 
-                let arms: Vec<Rc<FuncArm>> = self
-                    .funcs
-                    .get(&fname)
-                    .cloned()
-                    .ok_or_else(|| EvalError::undefined_func(fname.clone(), fname_span))?;
+                let arms: Vec<Rc<FuncArm>> = match self.funcs.get(&fname) {
+                    Some(entries) => entries.iter().map(|entry| Rc::clone(&entry.arm)).collect(),
+                    None => return Err(EvalError::undefined_func(fname.clone(), fname_span)),
+                };
 
                 let argv: Vec<Value> = args
                     .iter()
@@ -348,8 +268,6 @@ impl Env {
     }
 }
 
-// -------- pattern helpers --------
-
 fn val_eq(a: &Value, b: &Value) -> Result<bool, EvalError> {
     use Value::*;
     Ok(match (a, b) {
@@ -373,7 +291,13 @@ fn match_and_bind(
     for (p, a) in params.iter().zip(args) {
         match p {
             Pattern::Identifier(name) => {
-                bindings.insert(name.clone(), a.clone());
+                if let Some(existing) = bindings.get(name) {
+                    if !val_eq(existing, a).map_err(|e| e.with_span(span))? {
+                        return Ok(None);
+                    }
+                } else {
+                    bindings.insert(name.clone(), a.clone());
+                }
             }
             Pattern::Lit(Literal::Int(n)) => {
                 if !val_eq(a, &Value::Int(*n)).map_err(|e| e.with_span(span))? {
@@ -407,7 +331,7 @@ fn pattern_specificity(params: &[Pattern]) -> usize {
 mod tests {
     use super::*;
     use crate::{
-        lexer::{Lexer, token::Span},
+        lexer::Lexer,
         parser::{
             Parser,
             ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt},
@@ -429,6 +353,10 @@ mod tests {
 
     fn lit_float(f: f64) -> Expr {
         Expr::Lit(Literal::Float(f), dummy_span())
+    }
+
+    fn ident(name: &str) -> Expr {
+        Expr::Identifier(name.into(), dummy_span())
     }
 
     fn binary(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
@@ -533,7 +461,6 @@ mod tests {
     }
 
     #[test]
-
     fn mixed_numeric_arithmetic() {
         let mut env = Env::new();
 
@@ -573,7 +500,6 @@ mod tests {
             1.5,
         );
 
-        // Ensure int / float zero is caught
         let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::Div, lit_float(0.0)))
             .expect_err("expected divide-by-zero for int / float zero");
         assert!(matches!(err, EvalError::DivideByZero { .. }));
@@ -599,17 +525,15 @@ mod tests {
     #[test]
     fn literal_patterns_prefer_specific_arm() {
         let mut env = Env::new();
-        // generic arm
         env.eval_stmt(&Stmt::FunctionDefinition {
             name: "f".into(),
             arms: vec![FuncArm {
                 params: vec![Pattern::Identifier("x".into())],
-                body: Expr::Identifier("x".into(), dummy_span()),
+                body: ident("x"),
             }],
         })
         .unwrap();
 
-        // literal-specific arm
         env.eval_stmt(&Stmt::FunctionDefinition {
             name: "f".into(),
             arms: vec![FuncArm {
@@ -716,6 +640,23 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn repeated_identifier_pattern_requires_equal_arguments() {
+        let mut env = Env::new();
+        let definition = parse_stmt_with_spans("f(x, x) = x");
+        env.eval_stmt(&definition).expect("function registers");
+
+        let value = expect_value(&mut env, parse_expr_with_spans("f(5,5)"));
+        assert_eq!(value, Value::Int(5));
+
+        let err = eval_expr_stmt(&mut env, parse_expr_with_spans("f(5,6)"))
+            .expect_err("expected mismatch to reject arm");
+        assert!(
+            matches!(err, EvalError::NoMatchingArm { .. }),
+            "unexpected error: {err:?}"
+        );
     }
 
     #[test]

@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, RESET, VALUE_OUTPUT},
-    eval::Value,
+    interpreter::Value,
     lexer::{
         Lexer,
         token::{Token, TokenKind},
@@ -25,7 +25,15 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub struct ReplHelper;
+pub struct ReplHelper {
+    color_enabled: bool,
+}
+
+impl ReplHelper {
+    pub fn new(color_enabled: bool) -> Self {
+        Self { color_enabled }
+    }
+}
 
 impl rustyline::Helper for ReplHelper {}
 
@@ -41,6 +49,9 @@ impl Validator for ReplHelper {}
 
 impl Highlighter for ReplHelper {
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
+        if !self.color_enabled {
+            return Borrowed(line);
+        }
         let lexer = Lexer::new(line);
         let mut tokens = Vec::new();
 
@@ -66,7 +77,7 @@ impl Highlighter for ReplHelper {
             }
 
             let segment = &line[span.start..span.end];
-            if let Some(color) = highlight_color(&tokens, idx) {
+            if let Some(color) = highlight_color(&tokens, idx, self.color_enabled) {
                 highlighted.push_str(color);
                 highlighted.push_str(segment);
                 highlighted.push_str(RESET);
@@ -96,14 +107,21 @@ impl Highlighter for ReplHelper {
 
 pub type ReplEditor = Editor<ReplHelper, DefaultHistory>;
 
-pub fn create_editor() -> rustyline::Result<ReplEditor> {
+pub fn create_editor(color_enabled: bool) -> rustyline::Result<ReplEditor> {
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new()?;
-    rl.set_helper(Some(ReplHelper));
-    rl.set_color_mode(ColorMode::Forced);
+    rl.set_helper(Some(ReplHelper::new(color_enabled)));
+    rl.set_color_mode(if color_enabled {
+        ColorMode::Forced
+    } else {
+        ColorMode::Disabled
+    });
     Ok(rl)
 }
 
-pub fn format_value(value: &Value) -> String {
+pub fn format_value(value: &Value, color_enabled: bool) -> String {
+    if !color_enabled {
+        return value.to_string();
+    }
     let style = match value {
         Value::Int(_) | Value::Float(_) | Value::Bool(_) => VALUE_OUTPUT,
     };
@@ -112,10 +130,13 @@ pub fn format_value(value: &Value) -> String {
 
 pub fn print_report<W: Write>(
     writer: &mut W,
-    _message: &str,
     source: &str,
     report: Report,
+    color_enabled: bool,
 ) -> io::Result<()> {
+    if !color_enabled {
+        return render_fallback(writer, source, &report);
+    }
     let has_labels = report
         .labels()
         .map(|labels| labels.count() > 0)
@@ -169,7 +190,14 @@ fn render_fallback<W: Write>(writer: &mut W, source: &str, report: &Report) -> i
     Ok(())
 }
 
-fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<&'static str> {
+fn highlight_color<'a>(
+    tokens: &[Token<'a>],
+    index: usize,
+    color_enabled: bool,
+) -> Option<&'static str> {
+    if !color_enabled {
+        return None;
+    }
     match tokens[index].kind {
         TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(LITERAL_YELLOW),
         TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(FUNCTION_CYAN),

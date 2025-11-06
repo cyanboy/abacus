@@ -1,6 +1,8 @@
 use std::{
     fmt::Write,
+    fs::File,
     io::{self, BufRead, Write as IoWrite},
+    path::Path,
 };
 
 use miette::{NamedSource, Report};
@@ -11,7 +13,7 @@ use crate::{
         PROMPT_BRACKET_WARNING, PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, RESET,
         TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
     },
-    eval::Env,
+    interpreter::Env,
     lexer::Lexer,
     parser::Parser,
     repl::{create_editor, format_value, print_report},
@@ -19,20 +21,41 @@ use crate::{
 
 const TITLE: &str = "[ABACUS - Calculator REPL]";
 
+#[derive(Debug, Clone, Copy)]
+pub struct RunConfig {
+    pub color: bool,
+}
+
+impl Default for RunConfig {
+    fn default() -> Self {
+        Self { color: true }
+    }
+}
+
 pub fn run() {
-    println!("{}", colorize_title(TITLE));
-    println!("{INSTRUCTION_DIM_GREEN}Type expressions or 'quit' to exit{RESET}\n");
+    run_with_config(RunConfig::default());
+}
+
+pub fn run_with_config(config: RunConfig) {
+    if config.color {
+        println!("{}", colorize_title(TITLE, true));
+        println!("{INSTRUCTION_DIM_GREEN}Type expressions or 'quit' to exit{RESET}\n");
+    } else {
+        println!("{}", colorize_title(TITLE, false));
+        println!("Type expressions or 'quit' to exit\n");
+    }
 
     if std::env::var_os("ABACUS_TEST_MODE").is_some() {
         let stdin = io::stdin();
         let mut stdout = io::stdout();
-        run_noninteractive(stdin.lock(), &mut stdout).expect("failed to run non-interactive REPL");
+        run_noninteractive_with_config(stdin.lock(), &mut stdout, config)
+            .expect("failed to run non-interactive REPL");
         return;
     }
 
-    let mut rl = create_editor().expect("failed to initialize REPL editor");
+    let mut rl = create_editor(config.color).expect("failed to initialize REPL editor");
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new();
+    let mut prompt_state = PromptState::new(config.color, true);
 
     loop {
         let prompt = prompt_state.prompt();
@@ -67,13 +90,25 @@ pub fn run() {
     }
 }
 
-pub fn run_noninteractive<R, W>(mut reader: R, out: &mut W) -> io::Result<()>
+pub fn run_noninteractive<R, W>(reader: R, out: &mut W) -> io::Result<()>
+where
+    R: BufRead,
+    W: IoWrite,
+{
+    run_noninteractive_with_config(reader, out, RunConfig::default())
+}
+
+pub fn run_noninteractive_with_config<R, W>(
+    mut reader: R,
+    out: &mut W,
+    config: RunConfig,
+) -> io::Result<()>
 where
     R: BufRead,
     W: IoWrite,
 {
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new();
+    let mut prompt_state = PromptState::new(config.color, true);
     let mut line = String::new();
 
     loop {
@@ -108,7 +143,48 @@ where
     Ok(())
 }
 
-fn colorize_title(title: &str) -> String {
+pub fn run_file<P: AsRef<Path>>(path: P, config: RunConfig) -> io::Result<()> {
+    let file = File::open(path)?;
+    let reader = io::BufReader::new(file);
+    let mut stdout = io::stdout();
+    run_script_reader(reader, &mut stdout, config)
+}
+
+pub fn run_expression(expr: &str, config: RunConfig) -> io::Result<()> {
+    let trimmed = expr.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let mut env = Env::new();
+    let mut prompt_state = PromptState::new(config.color, false);
+    let mut stdout = io::stdout();
+    process_input(trimmed, &mut prompt_state, &mut env, &mut stdout, false)?;
+    stdout.flush()
+}
+
+fn run_script_reader<R, W>(reader: R, out: &mut W, config: RunConfig) -> io::Result<()>
+where
+    R: BufRead,
+    W: IoWrite,
+{
+    let mut env = Env::new();
+    let mut prompt_state = PromptState::new(config.color, false);
+    for line in reader.lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        process_input(trimmed, &mut prompt_state, &mut env, out, false)?;
+        prompt_state.advance();
+    }
+    out.flush()
+}
+
+fn colorize_title(title: &str, color_enabled: bool) -> String {
+    if !color_enabled {
+        return title.to_string();
+    }
     let mut colored = String::with_capacity(title.len() * (BOLD.len() + RESET.len()));
     let mut title_chars = title.splitn(2, ' ');
     let name = title_chars.next().unwrap_or(title);
@@ -206,28 +282,38 @@ fn process_input<W: IoWrite>(
         Ok(stmt) => match env.eval_stmt(&stmt) {
             Ok(Some(v)) => {
                 prompt_state.mark_ready();
-                let value = format_value(&v);
-                writeln!(out, "{}", prompt_state.format_with_prompt(&value))?;
-                writeln!(out)?;
+                let value = format_value(&v, prompt_state.color_enabled());
+                if prompt_state.show_prompt() {
+                    writeln!(out, "{}", prompt_state.format_with_prompt(&value))?;
+                    writeln!(out)?;
+                } else {
+                    writeln!(out, "{value}")?;
+                }
             }
             Ok(None) => {
                 prompt_state.mark_ready();
-                writeln!(out)?;
+                if prompt_state.show_prompt() {
+                    writeln!(out)?;
+                }
             }
             Err(e) => {
                 prompt_state.mark_error();
                 let report =
                     Report::new(e).with_source_code(NamedSource::new("<repl>", input.to_string()));
-                print_report(out, "", input, report)?;
-                writeln!(out)?;
+                print_report(out, input, report, prompt_state.color_enabled())?;
+                if prompt_state.show_prompt() {
+                    writeln!(out)?;
+                }
             }
         },
         Err(e) => {
             prompt_state.mark_error();
             let report =
                 Report::new(e).with_source_code(NamedSource::new("<repl>", input.to_string()));
-            print_report(out, "", input, report)?;
-            writeln!(out)?;
+            print_report(out, input, report, prompt_state.color_enabled())?;
+            if prompt_state.show_prompt() {
+                writeln!(out)?;
+            }
         }
     }
 
@@ -238,24 +324,36 @@ fn process_input<W: IoWrite>(
 struct PromptState {
     mode: PromptMode,
     line_number: usize,
+    color_enabled: bool,
+    show_prompt: bool,
 }
 
 impl PromptState {
-    fn new() -> Self {
+    fn new(color_enabled: bool, show_prompt: bool) -> Self {
         Self {
             mode: PromptMode::Ready,
             line_number: 0,
+            color_enabled,
+            show_prompt,
         }
     }
 
     fn prompt(&self) -> String {
-        self.prompt_prefix()
+        if self.show_prompt {
+            self.prompt_prefix()
+        } else {
+            String::new()
+        }
     }
 
     fn format_with_prompt(&self, content: &str) -> String {
-        let mut line = self.prompt_prefix();
-        line.push_str(content);
-        line
+        if self.show_prompt {
+            let mut line = self.prompt_prefix();
+            line.push_str(content);
+            line
+        } else {
+            content.to_string()
+        }
     }
 
     fn mark_ready(&mut self) {
@@ -280,11 +378,15 @@ impl PromptState {
         let width = Self::counter_width(self.line_number);
 
         let mut prompt = String::new();
-        prompt.push_str(RESET);
-        prompt.push_str(bracket_color);
+        if self.color_enabled {
+            prompt.push_str(RESET);
+            prompt.push_str(bracket_color);
+        }
         prompt.push('[');
-        prompt.push_str(RESET);
-        prompt.push_str(counter_color);
+        if self.color_enabled {
+            prompt.push_str(RESET);
+            prompt.push_str(counter_color);
+        }
         prompt.push_str("0x");
         write!(
             &mut prompt,
@@ -293,20 +395,28 @@ impl PromptState {
             width = width
         )
         .unwrap();
-        prompt.push_str(RESET);
-        prompt.push_str(bracket_color);
+        if self.color_enabled {
+            prompt.push_str(RESET);
+            prompt.push_str(bracket_color);
+        }
         prompt.push_str("]:");
-        prompt.push_str(RESET);
+        if self.color_enabled {
+            prompt.push_str(RESET);
+        }
         prompt.push(' ');
 
         prompt
     }
 
     fn prompt_colors(&self) -> (&'static str, &'static str) {
-        match self.mode {
-            PromptMode::Ready => (PROMPT_BRACKET_READY, PROMPT_READY),
-            PromptMode::Error => (PROMPT_BRACKET_ERROR, PROMPT_ERROR),
-            PromptMode::Warning => (PROMPT_BRACKET_WARNING, PROMPT_WARNING),
+        if !self.color_enabled {
+            ("", "")
+        } else {
+            match self.mode {
+                PromptMode::Ready => (PROMPT_BRACKET_READY, PROMPT_READY),
+                PromptMode::Error => (PROMPT_BRACKET_ERROR, PROMPT_ERROR),
+                PromptMode::Warning => (PROMPT_BRACKET_WARNING, PROMPT_WARNING),
+            }
         }
     }
 
@@ -321,6 +431,14 @@ impl PromptState {
             }
         }
         width
+    }
+
+    fn color_enabled(&self) -> bool {
+        self.color_enabled
+    }
+
+    fn show_prompt(&self) -> bool {
+        self.show_prompt
     }
 }
 
