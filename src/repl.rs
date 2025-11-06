@@ -38,10 +38,11 @@ impl Validator for ReplHelper {}
 
 impl Highlighter for ReplHelper {
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
-        let mut lexer = Lexer::new(line);
+        let lexer = Lexer::new(line);
         let mut tokens = Vec::new();
-        while let Some(token_result) = lexer.next() {
-            match token_result {
+
+        for token in lexer {
+            match token {
                 Ok(token) => tokens.push(token),
                 Err(_) => return Borrowed(line),
             }
@@ -151,7 +152,7 @@ fn render_fallback(source: &str, report: &Report) {
                 .or_else(|| labels.first())
                 .map(|label| label.offset())
         })
-        .unwrap_or_else(|| source.len());
+        .unwrap_or(source.len());
     let byte_index = label_offset.min(source.len());
     let prefix = &source[..byte_index];
     let caret_pad = " ".repeat(UnicodeWidthStr::width(prefix));

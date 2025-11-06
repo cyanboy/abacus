@@ -3,6 +3,13 @@ name = "abacus"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "A tiny, expressive calculator language with a friendly REPL and pattern-matched functions."
+repository = "https://github.com/cyanboy/abacus"
+homepage = "https://github.com/cyanboy/abacus"
+documentation = "https://docs.rs/abacus"
+readme = "README.md"
+keywords = ["calculator", "language", "repl", "functional"]
+categories = ["command-line-utilities", "compilers"]
 default-run = "abc"
 
 [dependencies]
