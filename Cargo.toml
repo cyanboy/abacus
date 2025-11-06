@@ -11,6 +11,7 @@ readme = "README.md"
 keywords = ["calculator", "language", "repl", "functional"]
 categories = ["command-line-utilities", "compilers"]
 default-run = "abc"
+rust-version = "1.91"
 
 [dependencies]
 miette = { version = "7.6.0", features = ["fancy", "derive"] }
