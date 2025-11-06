@@ -6,7 +6,7 @@ use crate::lexer::{error::LexError, token::Span};
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum ParseError {
-    #[error("Unexpected token: expected {expected}, found {found}")]
+    #[error("unexpected token: expected {expected}, found {found}")]
     UnexpectedToken {
         expected: String,
         found: String,

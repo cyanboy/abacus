@@ -17,6 +17,7 @@ pub struct Parser<'a> {
     /// Lookahead-capable stream of tokens (or lexer errors).
     lexer: Peekable<Lexer<'a>>,
     last_span: Option<Span>,
+    last_token: Option<TokenKind<'a>>,
     source_len: usize,
 }
 
@@ -27,6 +28,7 @@ impl<'a> Parser<'a> {
         Self {
             lexer: lexer.peekable(),
             last_span: None,
+            last_token: None,
             source_len,
         }
     }
@@ -54,6 +56,7 @@ impl<'a> Parser<'a> {
         match self.lexer.next() {
             Some(Ok(tok)) => {
                 self.last_span = Some(tok.span);
+                self.last_token = Some(tok.kind.clone());
                 Ok(Some(tok))
             }
             Some(Err(e)) => Err(ParseError::from(e)),
@@ -72,6 +75,14 @@ impl<'a> Parser<'a> {
         } else {
             None
         }
+    }
+
+    fn fallback_found(&self) -> Option<String> {
+        self.last_token.as_ref().map(|kind| kind.to_string())
+    }
+
+    fn fallback_found_and_span(&self) -> (Option<String>, Option<Span>) {
+        (self.fallback_found(), self.fallback_span())
     }
 
     /// If next token equals `expected`, consume it and return true.
@@ -93,11 +104,10 @@ impl<'a> Parser<'a> {
                 Some(tok.kind.to_string()),
                 Some(tok.span),
             )),
-            None => Err(ParseError::unexpected(
-                expected_str,
-                None::<String>,
-                self.fallback_span(),
-            )),
+            None => {
+                let (found, span) = self.fallback_found_and_span();
+                Err(ParseError::unexpected(expected_str, found, span))
+            }
         }
     }
 
@@ -135,11 +145,8 @@ impl<'a> Parser<'a> {
                 }
             },
             None => {
-                return Err(ParseError::unexpected(
-                    "identifier",
-                    None::<String>,
-                    self.fallback_span(),
-                ));
+                let (found, span) = self.fallback_found_and_span();
+                return Err(ParseError::unexpected("identifier", found, span));
             }
         };
 
@@ -201,11 +208,10 @@ impl<'a> Parser<'a> {
                     Some(span),
                 )),
             },
-            None => Err(ParseError::unexpected(
-                "literal",
-                None::<String>,
-                self.fallback_span(),
-            )),
+            None => {
+                let (found, span) = self.fallback_found_and_span();
+                Err(ParseError::unexpected("literal", found, span))
+            }
         }
     }
 
@@ -232,11 +238,8 @@ impl<'a> Parser<'a> {
                 self.parse_primary()?
             }
         } else {
-            return Err(ParseError::unexpected(
-                "expression",
-                None::<String>,
-                self.fallback_span(),
-            ));
+            let (found, span) = self.fallback_found_and_span();
+            return Err(ParseError::unexpected("expression", found, span));
         };
 
         self.parse_expr_bp_with_lhs(lhs, min_bp)
@@ -340,11 +343,10 @@ impl<'a> Parser<'a> {
                 Some(kind.to_string()),
                 Some(span),
             )),
-            None => Err(ParseError::unexpected(
-                "expression",
-                None::<String>,
-                self.fallback_span(),
-            )),
+            None => {
+                let (found, span) = self.fallback_found_and_span();
+                Err(ParseError::unexpected("expression", found, span))
+            }
         }
     }
 

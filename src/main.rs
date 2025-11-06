@@ -319,7 +319,7 @@ fn process_input<W: IoWrite>(
                 prompt_state.mark_error();
                 let report =
                     Report::new(e).with_source_code(NamedSource::new("<repl>", input.to_string()));
-                print_report(out, &report.to_string(), input, report)?;
+                print_report(out, "", input, report)?;
                 writeln!(out)?;
             }
         },
@@ -327,7 +327,7 @@ fn process_input<W: IoWrite>(
             prompt_state.mark_error();
             let report =
                 Report::new(e).with_source_code(NamedSource::new("<repl>", input.to_string()));
-            print_report(out, &report.to_string(), input, report)?;
+            print_report(out, "", input, report)?;
             writeln!(out)?;
         }
     }
