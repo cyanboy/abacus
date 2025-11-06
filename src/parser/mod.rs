@@ -16,13 +16,18 @@ use error::ParseError;
 pub struct Parser<'a> {
     /// Lookahead-capable stream of tokens (or lexer errors).
     lexer: Peekable<Lexer<'a>>,
+    last_span: Option<Span>,
+    source_len: usize,
 }
 
 impl<'a> Parser<'a> {
     /// Build a parser from a source string.
     pub fn new(lexer: Lexer<'a>) -> Self {
+        let source_len = lexer.source_len();
         Self {
             lexer: lexer.peekable(),
+            last_span: None,
+            source_len,
         }
     }
 
@@ -47,9 +52,25 @@ impl<'a> Parser<'a> {
     /// Consume one token. Propagate lexer errors.
     fn bump(&mut self) -> Result<Option<Token<'a>>, ParseError> {
         match self.lexer.next() {
-            Some(Ok(tok)) => Ok(Some(tok)),
+            Some(Ok(tok)) => {
+                self.last_span = Some(tok.span);
+                Ok(Some(tok))
+            }
             Some(Err(e)) => Err(ParseError::from(e)),
             None => Ok(None),
+        }
+    }
+
+    fn fallback_span(&self) -> Option<Span> {
+        if let Some(span) = self.last_span {
+            Some(span)
+        } else if self.source_len > 0 {
+            Some(Span::new(
+                self.source_len.saturating_sub(1),
+                self.source_len,
+            ))
+        } else {
+            None
         }
     }
 
@@ -72,7 +93,11 @@ impl<'a> Parser<'a> {
                 Some(tok.kind.to_string()),
                 Some(tok.span),
             )),
-            None => Err(ParseError::unexpected(expected_str, None::<String>, None)),
+            None => Err(ParseError::unexpected(
+                expected_str,
+                None::<String>,
+                self.fallback_span(),
+            )),
         }
     }
 
@@ -110,7 +135,11 @@ impl<'a> Parser<'a> {
                 }
             },
             None => {
-                return Err(ParseError::unexpected("identifier", None::<String>, None));
+                return Err(ParseError::unexpected(
+                    "identifier",
+                    None::<String>,
+                    self.fallback_span(),
+                ));
             }
         };
 
@@ -172,7 +201,11 @@ impl<'a> Parser<'a> {
                     Some(span),
                 )),
             },
-            None => Err(ParseError::unexpected("literal", None::<String>, None)),
+            None => Err(ParseError::unexpected(
+                "literal",
+                None::<String>,
+                self.fallback_span(),
+            )),
         }
     }
 
@@ -199,7 +232,11 @@ impl<'a> Parser<'a> {
                 self.parse_primary()?
             }
         } else {
-            return Err(ParseError::unexpected("expression", None::<String>, None));
+            return Err(ParseError::unexpected(
+                "expression",
+                None::<String>,
+                self.fallback_span(),
+            ));
         };
 
         self.parse_expr_bp_with_lhs(lhs, min_bp)
@@ -303,7 +340,11 @@ impl<'a> Parser<'a> {
                 Some(kind.to_string()),
                 Some(span),
             )),
-            None => Err(ParseError::unexpected("expression", None::<String>, None)),
+            None => Err(ParseError::unexpected(
+                "expression",
+                None::<String>,
+                self.fallback_span(),
+            )),
         }
     }
 

@@ -15,8 +15,9 @@ pub const INSTRUCTION_DIM_GREEN: &str = "\x1b[2;32m";
 pub const PROMPT_READY: &str = "\x1b[1;92m";
 pub const PROMPT_ERROR: &str = "\x1b[1;31m";
 pub const PROMPT_WARNING: &str = "\x1b[1;33m";
-pub const PROMPT_COUNTER: &str = "\x1b[2;37m";
-pub const PROMPT_PARENS: &str = "\x1b[1;35m";
+pub const PROMPT_BRACKET_READY: &str = "\x1b[32m";
+pub const PROMPT_BRACKET_ERROR: &str = "\x1b[31m";
+pub const PROMPT_BRACKET_WARNING: &str = "\x1b[33m";
 
 // REPL syntax highlighting
 pub const LITERAL_YELLOW: &str = "\x1b[93m";

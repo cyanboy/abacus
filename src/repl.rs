@@ -1,4 +1,7 @@
-use std::borrow::Cow::{Borrowed, Owned};
+use std::{
+    borrow::Cow::{Borrowed, Owned},
+    io::{self, Write},
+};
 
 use miette::{GraphicalReportHandler, Report};
 use rustyline::{
@@ -107,8 +110,16 @@ pub fn format_value(value: &Value) -> String {
     format!("{style}{value}{RESET}")
 }
 
-pub fn print_report(message: &str, source: &str, report: Report) {
-    eprintln!("Error: {message}");
+pub fn print_report<W: Write>(
+    writer: &mut W,
+    _message: &str,
+    source: &str,
+    report: Report,
+) -> io::Result<()> {
+    let has_labels = report
+        .labels()
+        .map(|labels| labels.count() > 0)
+        .unwrap_or(false);
 
     let handler = GraphicalReportHandler::new().without_cause_chain();
     let mut rendered = String::new();
@@ -116,30 +127,25 @@ pub fn print_report(message: &str, source: &str, report: Report) {
         .render_report(&mut rendered, report.as_ref())
         .is_err()
     {
-        render_fallback(source, &report);
-        return;
+        render_fallback(writer, source, &report)?;
+        return Ok(());
     }
 
-    let output_lines: Vec<&str> = rendered
-        .lines()
-        .skip_while(|line| {
-            let trimmed = line.trim();
-            trimmed.is_empty() || trimmed.ends_with(message)
-        })
-        .collect();
-
-    if output_lines.is_empty() {
-        render_fallback(source, &report);
-        return;
+    if rendered.trim().is_empty() || !has_labels {
+        render_fallback(writer, source, &report)?;
+        return Ok(());
     }
 
-    eprintln!();
-    eprintln!("{}", output_lines.join("\n"));
+    write!(writer, "{rendered}")?;
+    if !rendered.ends_with('\n') {
+        writeln!(writer)?;
+    }
+    Ok(())
 }
 
-fn render_fallback(source: &str, report: &Report) {
+fn render_fallback<W: Write>(writer: &mut W, source: &str, report: &Report) -> io::Result<()> {
     if source.is_empty() {
-        return;
+        return Ok(());
     }
 
     let label_offset = report
@@ -157,9 +163,10 @@ fn render_fallback(source: &str, report: &Report) {
     let prefix = &source[..byte_index];
     let caret_pad = " ".repeat(UnicodeWidthStr::width(prefix));
 
-    eprintln!();
-    eprintln!("  1 | {source}");
-    eprintln!("    | {caret_pad}^");
+    writeln!(writer)?;
+    writeln!(writer, "  1 | {source}")?;
+    writeln!(writer, "    | {caret_pad}^")?;
+    Ok(())
 }
 
 fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<&'static str> {

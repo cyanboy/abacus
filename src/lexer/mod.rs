@@ -25,6 +25,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn source_len(&self) -> usize {
+        self.s.len()
+    }
+
     /// Consume ASCII/Unicode whitespace.
     fn skip_whitespace(&mut self) {
         while self.chars.next_if(|&(_, c)| c.is_whitespace()).is_some() {}
