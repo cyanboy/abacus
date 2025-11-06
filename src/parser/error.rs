@@ -77,7 +77,7 @@ mod tests {
             } => {
                 assert_eq!(expected, "identifier");
                 assert_eq!(found, "'foo'");
-                let offset: usize = span.offset().into();
+                let offset: usize = span.offset();
                 assert_eq!(offset, 3);
                 assert_eq!(span.len(), 3);
             }
@@ -92,7 +92,7 @@ mod tests {
             ParseError::LexerError {
                 span: Some(span), ..
             } => {
-                let offset: usize = span.offset().into();
+                let offset: usize = span.offset();
                 assert_eq!(offset, 1);
                 assert_eq!(span.len(), 4);
             }

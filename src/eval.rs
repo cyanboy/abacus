@@ -114,6 +114,12 @@ pub struct Env {
     funcs: HashMap<String, Vec<Rc<FuncArm>>>,
 }
 
+impl Default for Env {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Env {
     pub fn new() -> Self {
         Self {
@@ -738,7 +744,7 @@ mod tests {
     }
 
     fn assert_source_span(span: SourceSpan, start: usize, len: usize) {
-        let offset: usize = span.offset().into();
+        let offset: usize = span.offset();
         assert_eq!(offset, start, "unexpected span offset");
         assert_eq!(span.len(), len, "unexpected span length");
     }

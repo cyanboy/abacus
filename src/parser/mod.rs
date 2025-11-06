@@ -398,7 +398,7 @@ mod tests {
     use super::*;
     use crate::lexer::token::Span;
 
-    fn parse<'a>(input: &'a str) -> Result<Stmt, ParseError> {
+    fn parse(input: &str) -> Result<Stmt, ParseError> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         parser.parse()
@@ -552,7 +552,7 @@ mod tests {
             assert_eq!(expected, "end of input");
             assert_eq!(found, "'2'");
             let span = span.expect("span present for trailing literal");
-            let offset: usize = span.offset().into();
+            let offset: usize = span.offset();
             assert_eq!(offset, 2);
         } else {
             panic!("expected EOF error for trailing literal, got {err:?}");
@@ -568,7 +568,7 @@ mod tests {
             assert_eq!(expected, "end of input");
             assert_eq!(found, "'y'");
             let span = span.expect("span present for trailing identifier");
-            let offset: usize = span.offset().into();
+            let offset: usize = span.offset();
             assert_eq!(offset, 5);
         } else {
             panic!("expected EOF error for trailing identifier, got {err:?}");

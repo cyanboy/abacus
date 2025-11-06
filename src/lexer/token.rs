@@ -46,6 +46,10 @@ impl Span {
         self.end.saturating_sub(self.start)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+
     pub fn into_source_span(self) -> SourceSpan {
         let len = self.len().max(1);
         SourceSpan::new(self.start.into(), len)
@@ -111,7 +115,7 @@ mod tests {
     fn span_into_source_span_preserves_offsets() {
         let span = Span::new(2, 5);
         let source_span = span.into_source_span();
-        let offset: usize = source_span.offset().into();
+        let offset: usize = source_span.offset();
         assert_eq!(offset, 2);
         assert_eq!(source_span.len(), 3);
     }
