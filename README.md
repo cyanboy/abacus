@@ -14,19 +14,13 @@ Abacus is a small, expressive calculator language for quick experiments and teac
 cargo install abacus
 ```
 
-Need a bleeding-edge build? Install directly from the repository:
-
-```bash
-cargo install --locked --git https://github.com/cyanboy/abacus
-```
-
 ---
 
 ## Try It
 
 Run the REPL with `abc`:
 
-```
+```abacus
 Abacus - Calculator REPL
 Type expressions or 'quit' to exit
 
@@ -59,16 +53,7 @@ true
 ## Build From Source
 
 ```bash
-cargo run      # start the REPL (runs the `abc` binary)
-cargo test     # run the test suite
-cargo fmt      # format the codebase
-```
-
-To build the binary without launching the REPL:
-
-```bash
 cargo build
-./target/debug/abc
 ```
 
 ---
