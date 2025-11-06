@@ -46,10 +46,6 @@ impl Span {
         self.end.saturating_sub(self.start)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.start >= self.end
-    }
-
     pub fn into_source_span(self) -> SourceSpan {
         let len = self.len().max(1);
         SourceSpan::new(self.start.into(), len)
