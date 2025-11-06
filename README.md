@@ -1,6 +1,6 @@
 # Abacus
 
-![build](https://github.com/cyanboy/abacus/actions/workflows/main.yml/badge.svg)
+![build](https://github.com/cyanboy/abacus/actions/workflows/build.yml/badge.svg)
 
 Abacus is a small, expressive calculator language for quick experiments and teaching functional programming ideas. It pairs a friendly REPL with pattern-matched functions so you can sketch algorithms without bootstrapping a full Rust project.
 
