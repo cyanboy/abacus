@@ -1,6 +1,12 @@
+mod colors;
+mod eval;
+mod lexer;
+mod parser;
+mod repl;
+
 use miette::{NamedSource, Report};
 
-use abacus::{
+use crate::{
     colors::{
         BOLD, INSTRUCTION_DIM_GREEN, PROMPT_COUNTER, PROMPT_ERROR, PROMPT_PARENS, PROMPT_READY,
         PROMPT_WARNING, RESET, TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
