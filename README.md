@@ -2,7 +2,7 @@
 
 ![build](https://github.com/cyanboy/abacus/actions/workflows/build.yml/badge.svg)
 
-Abacus is a small, interpreted, functional language for quick experiments
+Abacus is a experimental, interpreted functional programming language with a pleasant REPL
 
 ---
 
