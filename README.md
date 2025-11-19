@@ -1,6 +1,6 @@
 # Abacus
 
-![build](https://github.com/cyanboy/abacus/actions/workflows/build.yml/badge.svg)
+![build](https://github.com/cyanboy/abacus/actions/workflows/ci.yml/badge.svg)
 
 Abacus is a experimental, interpreted functional programming language with a pleasant REPL
 
