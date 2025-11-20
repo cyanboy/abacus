@@ -2,6 +2,7 @@ use std::{
     io::Write,
     process::{Command, Stdio},
 };
+use tempfile::NamedTempFile;
 
 #[test]
 fn cli_runs_in_test_mode_with_piped_input() {
@@ -59,17 +60,17 @@ fn cli_expr_flag_evaluates_expression() {
 #[test]
 fn cli_script_flag_executes_file() {
     let script = "a = 4\na * 2\n";
-    let mut path = std::env::temp_dir();
-    path.push("abacus_cli_script.ab");
-    std::fs::write(&path, script).expect("write script file");
+    let mut file = NamedTempFile::new().expect("create temp script");
+    file.write_all(script.as_bytes())
+        .expect("write script file");
+    file.flush().expect("flush script");
 
     let output = Command::new(env!("CARGO_BIN_EXE_abc"))
         .arg("--no-color")
-        .arg(&path)
+        .arg(file.path())
         .output()
         .expect("run abc file");
 
-    std::fs::remove_file(path).ok();
     assert!(
         output.status.success(),
         "process failed: {:?}",

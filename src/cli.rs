@@ -572,6 +572,37 @@ mod tests {
     }
 
     #[test]
+    fn interactive_loop_like_flow_handles_empty_and_quit() {
+        let mut prompt = PromptState::new(false, true);
+        let mut env = Env::new();
+        let mut out = Vec::new();
+
+        for line in ["", "2 + 2", "quit"] {
+            let input = line.trim();
+            if input.is_empty() {
+                writeln!(out).unwrap();
+                continue;
+            }
+            if input == "quit" || input == "exit" {
+                writeln!(out, "Goodbye!").unwrap();
+                break;
+            }
+            process_input(input, &mut prompt, &mut env, &mut out, false).unwrap();
+            prompt.advance();
+        }
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(
+            rendered.contains("4"),
+            "should evaluate expression: {rendered}"
+        );
+        assert!(
+            rendered.contains("Goodbye!"),
+            "should print goodbye on quit: {rendered}"
+        );
+    }
+
+    #[test]
     fn process_input_assignment_without_prompt_suppresses_output() {
         let mut prompt = PromptState::new(false, false);
         let mut env = Env::new();

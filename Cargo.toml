@@ -26,6 +26,9 @@ thiserror = "2.0.17"
 unicode-width = "0.1"
 colored = "2.1"
 
+[dev-dependencies]
+tempfile = "3"
+
 [[bin]]
 name = "abc"
 path = "src/main.rs"
