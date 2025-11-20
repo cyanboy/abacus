@@ -4,6 +4,8 @@
 
 Abacus is a experimental, interpreted functional programming language with a pleasant REPL
 
+![repl](assets/repl.png)
+
 ---
 
 ## Highlights
@@ -29,6 +31,21 @@ cargo install abacus
 ## Try It
 
 ### Usage
+
+```
+The Abacus calculator REPL and runner
+
+Usage: abc [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]  Execute the given Abacus source file
+
+Options:
+  -e, --expr <EXPR>  Evaluate a single expression and exit
+  -n, --no-color     Disable ANSI color output
+  -h, --help         Print help
+  -V, --version      Print version
+```
 
 - Start the interactive REPL: `abc`
 - Evaluate a single expression and print the result: `abc -e "2 + 2"`
