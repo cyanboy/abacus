@@ -68,6 +68,18 @@ impl Env {
                 for arm in arms.iter() {
                     let specificity = pattern_specificity(&arm.params);
                     let rc = Rc::new(arm.clone());
+
+                    if let Some(existing_idx) = entry
+                        .iter()
+                        .position(|existing| existing.arm.params == arm.params)
+                    {
+                        entry[existing_idx] = FuncEntry {
+                            arm: rc,
+                            specificity,
+                        };
+                        continue;
+                    }
+
                     let insert_idx = entry
                         .iter()
                         .position(|existing| existing.specificity < specificity)
@@ -745,6 +757,72 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn redefining_function_replaces_existing_arm() {
+        let mut env = Env::new();
+        let def1 = parse_stmt_with_spans("f(x) = x + 1");
+        env.eval_stmt(&def1).expect("function registers");
+
+        let value = expect_value(&mut env, parse_expr_with_spans("f(5)"));
+        assert_eq!(value, Value::Int(6));
+
+        let def2 = parse_stmt_with_spans("f(x) = x * 2");
+        env.eval_stmt(&def2)
+            .expect("function redefinition succeeds");
+
+        let value = expect_value(&mut env, parse_expr_with_spans("f(5)"));
+        assert_eq!(value, Value::Int(10));
+    }
+
+    #[test]
+    fn callee_must_be_identifier() {
+        let mut env = Env::new();
+        let expr = Expr::Call {
+            callee: Box::new(lit_int(5)),
+            args: vec![lit_int(1)],
+            span: dummy_span(),
+        };
+        let err = env
+            .eval_stmt(&Stmt::Expression(expr))
+            .expect_err("call with non-identifier callee should fail");
+        match err {
+            EvalError::TypeError { message, .. } => {
+                assert_eq!(message, "callee must be identifier")
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn match_and_bind_allows_repeated_identifier_when_values_match() {
+        let bindings = match_and_bind(
+            &[
+                Pattern::Identifier("x".into()),
+                Pattern::Identifier("x".into()),
+            ],
+            &[Value::Int(7), Value::Int(7)],
+            dummy_span(),
+        )
+        .expect("matching should not raise errors")
+        .expect("patterns should match");
+        assert_eq!(bindings.get("x"), Some(&Value::Int(7)));
+    }
+
+    #[test]
+    fn val_eq_returns_false_for_mismatched_types() {
+        assert!(!val_eq(&Value::Bool(true), &Value::Int(1)).unwrap());
+    }
+
+    #[test]
+    fn pattern_specificity_counts_literal_params() {
+        let specific = pattern_specificity(&[
+            Pattern::Identifier("a".into()),
+            Pattern::Lit(Literal::Int(1)),
+            Pattern::Lit(Literal::Bool(false)),
+        ]);
+        assert_eq!(specific, 2);
     }
 
     fn parse_expr_with_spans(input: &str) -> Expr {

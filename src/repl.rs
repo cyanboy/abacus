@@ -3,6 +3,7 @@ use std::{
     io::{self, Write},
 };
 
+use colored::Colorize;
 use miette::{GraphicalReportHandler, Report};
 use rustyline::{
     Editor,
@@ -21,7 +22,7 @@ use crate::{
         Lexer,
         token::{Token, TokenKind},
     },
-    ui::colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, RESET, VALUE_OUTPUT},
+    ui::colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, VALUE_OUTPUT},
 };
 
 #[derive(Clone, Copy)]
@@ -77,13 +78,12 @@ impl Highlighter for ReplHelper {
             }
 
             let segment = &line[span.start..span.end];
-            if let Some(color) = highlight_color(&tokens, idx, self.color_enabled) {
-                highlighted.push_str(color);
-                highlighted.push_str(segment);
-                highlighted.push_str(RESET);
-                colored = true;
-            } else {
-                highlighted.push_str(segment);
+            match highlight_color(&tokens, idx) {
+                Some(color) => {
+                    highlighted.push_str(&segment.color(color).to_string());
+                    colored = true;
+                }
+                None => highlighted.push_str(segment),
             }
 
             cursor = span.end;
@@ -111,7 +111,7 @@ pub fn create_editor(color_enabled: bool) -> rustyline::Result<ReplEditor> {
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new()?;
     rl.set_helper(Some(ReplHelper::new(color_enabled)));
     rl.set_color_mode(if color_enabled {
-        ColorMode::Forced
+        ColorMode::Enabled
     } else {
         ColorMode::Disabled
     });
@@ -122,10 +122,7 @@ pub fn format_value(value: &Value, color_enabled: bool) -> String {
     if !color_enabled {
         return value.to_string();
     }
-    let style = match value {
-        Value::Int(_) | Value::Float(_) | Value::Bool(_) => VALUE_OUTPUT,
-    };
-    format!("{style}{value}{RESET}")
+    value.to_string().color(VALUE_OUTPUT).to_string()
 }
 
 pub fn print_report<W: Write>(
@@ -190,14 +187,7 @@ fn render_fallback<W: Write>(writer: &mut W, source: &str, report: &Report) -> i
     Ok(())
 }
 
-fn highlight_color<'a>(
-    tokens: &[Token<'a>],
-    index: usize,
-    color_enabled: bool,
-) -> Option<&'static str> {
-    if !color_enabled {
-        return None;
-    }
+fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<colored::Color> {
     match tokens[index].kind {
         TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(LITERAL_YELLOW),
         TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(FUNCTION_CYAN),
@@ -235,7 +225,14 @@ fn is_function_name<'a>(tokens: &[Token<'a>], index: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
+    use colored::{Colorize, control};
+    use rustyline::highlight::CmdKind;
+    use std::{borrow::Cow, sync::Once};
+
+    fn ensure_color_override() {
+        static FORCE: Once = Once::new();
+        FORCE.call_once(|| control::set_override(true));
+    }
 
     #[test]
     fn highlight_without_color_passes_through() {
@@ -248,20 +245,63 @@ mod tests {
 
     #[test]
     fn highlight_with_color_marks_tokens() {
+        ensure_color_override();
         let helper = ReplHelper::new(true);
         let highlighted = helper.highlight("foo(1 + 2)", 0).into_owned();
-        assert!(highlighted.contains(FUNCTION_CYAN));
-        assert!(highlighted.contains(OPERATOR_BLUE));
-        assert!(highlighted.contains(RESET));
+        let expected_fn = format!("{}", "foo".color(FUNCTION_CYAN));
+        assert!(
+            highlighted.contains(&expected_fn),
+            "function name should be highlighted: {highlighted:?}"
+        );
+        let expected_op = format!("{}", "+".color(OPERATOR_BLUE));
+        assert!(
+            highlighted.contains(&expected_op),
+            "operator should be highlighted: {highlighted:?}"
+        );
     }
 
     #[test]
     fn format_value_adds_style_when_colored() {
+        ensure_color_override();
         let value = Value::Int(8);
         assert_eq!(format_value(&value, false), "8");
         let colored = format_value(&value, true);
-        assert!(colored.starts_with(VALUE_OUTPUT));
-        assert!(colored.ends_with(RESET));
+        let expected = format!("{}", "8".color(VALUE_OUTPUT));
+        assert_eq!(colored, expected);
+    }
+
+    #[test]
+    fn create_editor_sets_helper_color_flag() {
+        let colorful = create_editor(true).expect("colorful editor");
+        assert!(colorful.helper().expect("helper installed").color_enabled);
+
+        let plain = create_editor(false).expect("plain editor");
+        assert!(!plain.helper().expect("helper installed").color_enabled);
+    }
+
+    #[test]
+    fn highlight_char_always_true() {
+        let helper = ReplHelper::new(true);
+        assert!(helper.highlight_char("", 0, CmdKind::Other));
+    }
+
+    #[test]
+    fn print_report_with_color_and_no_labels_falls_back() {
+        ensure_color_override();
+        let mut out = Vec::new();
+        let report = Report::msg("boom");
+        print_report(&mut out, "a + b", report, true).expect("print_report");
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("a + b"));
+        assert!(rendered.contains("^"));
+    }
+
+    #[test]
+    fn render_fallback_no_source_is_noop() {
+        let mut out = Vec::new();
+        let report = Report::msg("boom");
+        render_fallback(&mut out, "", &report).expect("fallback empty");
+        assert!(out.is_empty());
     }
 
     #[test]

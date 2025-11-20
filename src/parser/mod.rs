@@ -667,4 +667,110 @@ mod tests {
     fn parse_expr(input: &str) -> Expr {
         expect_expr(parse(input).unwrap())
     }
+
+    #[test]
+    fn parses_empty_function_parameters() {
+        let stmt = parse("f() = 1").unwrap();
+        let Stmt::FunctionDefinition { name, arms } = stmt else {
+            panic!("expected function definition");
+        };
+        assert_eq!(name, "f");
+        let arm = arms.first().expect("one arm");
+        assert!(arm.params.is_empty(), "expected empty params");
+    }
+
+    #[test]
+    fn lexer_errors_surface_as_parse_errors() {
+        let err = parse("$").unwrap_err();
+        assert!(matches!(err, ParseError::LexerError { .. }));
+    }
+
+    #[test]
+    fn empty_input_reports_expression_at_eof() {
+        let err = parse("").unwrap_err();
+        match err {
+            ParseError::UnexpectedToken {
+                expected,
+                found,
+                span,
+            } => {
+                assert_eq!(expected, "expression");
+                assert_eq!(found, "end of input");
+                assert!(span.is_none(), "span should be None for empty input");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn function_patterns_accept_bool_and_float_literals() {
+        let stmt = parse("f(true, 1.5) = 0").unwrap();
+        let Stmt::FunctionDefinition { arms, .. } = stmt else {
+            panic!("expected function definition");
+        };
+        let arm = arms.first().expect("one arm");
+        assert_eq!(
+            arm.params,
+            vec![
+                Pattern::Lit(Literal::Bool(true)),
+                Pattern::Lit(Literal::Float(1.5)),
+            ]
+        );
+    }
+
+    #[test]
+    fn unterminated_call_reports_last_span() {
+        let err = parse("foo(").unwrap_err();
+        match err {
+            ParseError::UnexpectedToken {
+                found,
+                span: Some(span),
+                ..
+            } => {
+                assert_eq!(found, "'('");
+                let offset: usize = span.offset();
+                assert_eq!(offset, 3, "span should point to '('");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bitwise_operators() {
+        let Expr::Binary { op, span, .. } = parse_expr("1 ^ 2") else {
+            panic!("expected xor expression");
+        };
+        assert_eq!(op, BinOp::Xor);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("1 | 2") else {
+            panic!("expected bitwise or expression");
+        };
+        assert_eq!(op, BinOp::BitOr);
+        assert_eq!(span, Span::new(0, 5));
+
+        let Expr::Binary { op, span, .. } = parse_expr("1 & 2") else {
+            panic!("expected bitwise and expression");
+        };
+        assert_eq!(op, BinOp::BitAnd);
+        assert_eq!(span, Span::new(0, 5));
+    }
+
+    #[test]
+    fn parses_call_with_multiple_args() {
+        let Expr::Call { args, .. } = parse_expr("f(1, 2, 3)") else {
+            panic!("expected call expression");
+        };
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn identifier_expression_parses_without_assignment() {
+        let stmt = parse("foo").unwrap();
+        let Expr::Identifier(name, span) = expect_expr(stmt) else {
+            panic!("expected identifier expression");
+        };
+        assert_eq!(name, "foo");
+        assert_eq!(span, Span::new(0, 3));
+    }
 }
