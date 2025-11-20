@@ -7,7 +7,7 @@ use abacus::{RunConfig, run_expression, run_file, run_with_config};
 #[derive(Parser, Debug)]
 #[command(
     name = "abc",
-    about = "The Abacus calculator REPL and runner",
+    about = "Abacus - The mathemagical REPL",
     author,
     version,
     disable_help_subcommand = true
