@@ -776,6 +776,55 @@ mod tests {
         assert_eq!(value, Value::Int(10));
     }
 
+    #[test]
+    fn callee_must_be_identifier() {
+        let mut env = Env::new();
+        let expr = Expr::Call {
+            callee: Box::new(lit_int(5)),
+            args: vec![lit_int(1)],
+            span: dummy_span(),
+        };
+        let err = env
+            .eval_stmt(&Stmt::Expression(expr))
+            .expect_err("call with non-identifier callee should fail");
+        match err {
+            EvalError::TypeError { message, .. } => {
+                assert_eq!(message, "callee must be identifier")
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn match_and_bind_allows_repeated_identifier_when_values_match() {
+        let bindings = match_and_bind(
+            &[
+                Pattern::Identifier("x".into()),
+                Pattern::Identifier("x".into()),
+            ],
+            &[Value::Int(7), Value::Int(7)],
+            dummy_span(),
+        )
+        .expect("matching should not raise errors")
+        .expect("patterns should match");
+        assert_eq!(bindings.get("x"), Some(&Value::Int(7)));
+    }
+
+    #[test]
+    fn val_eq_returns_false_for_mismatched_types() {
+        assert!(!val_eq(&Value::Bool(true), &Value::Int(1)).unwrap());
+    }
+
+    #[test]
+    fn pattern_specificity_counts_literal_params() {
+        let specific = pattern_specificity(&[
+            Pattern::Identifier("a".into()),
+            Pattern::Lit(Literal::Int(1)),
+            Pattern::Lit(Literal::Bool(false)),
+        ]);
+        assert_eq!(specific, 2);
+    }
+
     fn parse_expr_with_spans(input: &str) -> Expr {
         match parse_stmt_with_spans(input) {
             Stmt::Expression(expr) => expr,

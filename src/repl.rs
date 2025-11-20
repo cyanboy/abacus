@@ -226,6 +226,7 @@ fn is_function_name<'a>(tokens: &[Token<'a>], index: usize) -> bool {
 mod tests {
     use super::*;
     use colored::{Colorize, control};
+    use rustyline::highlight::CmdKind;
     use std::{borrow::Cow, sync::Once};
 
     fn ensure_color_override() {
@@ -267,6 +268,40 @@ mod tests {
         let colored = format_value(&value, true);
         let expected = format!("{}", "8".color(VALUE_OUTPUT));
         assert_eq!(colored, expected);
+    }
+
+    #[test]
+    fn create_editor_sets_helper_color_flag() {
+        let colorful = create_editor(true).expect("colorful editor");
+        assert!(colorful.helper().expect("helper installed").color_enabled);
+
+        let plain = create_editor(false).expect("plain editor");
+        assert!(!plain.helper().expect("helper installed").color_enabled);
+    }
+
+    #[test]
+    fn highlight_char_always_true() {
+        let helper = ReplHelper::new(true);
+        assert!(helper.highlight_char("", 0, CmdKind::Other));
+    }
+
+    #[test]
+    fn print_report_with_color_and_no_labels_falls_back() {
+        ensure_color_override();
+        let mut out = Vec::new();
+        let report = Report::msg("boom");
+        print_report(&mut out, "a + b", report, true).expect("print_report");
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("a + b"));
+        assert!(rendered.contains("^"));
+    }
+
+    #[test]
+    fn render_fallback_no_source_is_noop() {
+        let mut out = Vec::new();
+        let report = Report::msg("boom");
+        render_fallback(&mut out, "", &report).expect("fallback empty");
+        assert!(out.is_empty());
     }
 
     #[test]

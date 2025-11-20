@@ -447,6 +447,37 @@ mod tests {
     }
 
     #[test]
+    fn resolve_color_setting_honors_preference() {
+        control::set_override(false);
+        assert!(!resolve_color_setting(false));
+        assert!(resolve_color_setting(true));
+        control::set_override(false);
+    }
+
+    #[test]
+    fn noninteractive_with_color_renders_colored_prompts() {
+        let input = b"1 + 1\nquit\n";
+        let reader = Cursor::new(&input[..]);
+        let mut buffer = Vec::new();
+
+        run_noninteractive_with_config(reader, &mut buffer, RunConfig { color: true })
+            .expect("run noninteractive");
+
+        let output = String::from_utf8(buffer).expect("utf8");
+        assert!(
+            output.contains('\x1b'),
+            "output should contain ANSI:\n{output}"
+        );
+        assert!(output.contains("0x00"), "prompt counter missing:\n{output}");
+        control::set_override(false);
+    }
+
+    #[test]
+    fn run_expression_ignores_empty_input() {
+        run_expression("   ", RunConfig { color: true }).expect("empty expression ok");
+    }
+
+    #[test]
     fn noninteractive_handles_blank_lines_and_errors() {
         let input = b"2 + 2\n\nundefined()\nquit\n";
         let reader = Cursor::new(&input[..]);
@@ -518,6 +549,40 @@ mod tests {
         assert!(
             prompt.contains(&expected),
             "prompt should contain colored counter: {prompt:?}"
+        );
+    }
+
+    #[test]
+    fn prompt_prefix_reflects_error_state() {
+        ensure_color_override();
+        let mut state = PromptState::new(true, true);
+        state.mark_error();
+        let prompt = state.prompt();
+        let expected_bracket = format!("{}", "[".color(PROMPT_BRACKET_ERROR).bold());
+        assert!(
+            prompt.contains(&expected_bracket),
+            "prompt should use error colors: {prompt:?}"
+        );
+    }
+
+    #[test]
+    fn format_with_prompt_respects_show_prompt_flag() {
+        let state = PromptState::new(false, false);
+        let rendered = state.format_with_prompt("hello");
+        assert_eq!(rendered, "hello");
+    }
+
+    #[test]
+    fn process_input_assignment_without_prompt_suppresses_output() {
+        let mut prompt = PromptState::new(false, false);
+        let mut env = Env::new();
+        let mut out = Vec::new();
+
+        process_input("x = 5", &mut prompt, &mut env, &mut out, true).expect("process input");
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(
+            rendered.trim_end() == "x = 5",
+            "assignment without prompt should only echo input, got {rendered:?}"
         );
     }
 
