@@ -518,6 +518,42 @@ mod tests {
     }
 
     #[test]
+    fn process_input_success_echoes_and_marks_ready() {
+        let mut prompt = PromptState::new(false, true);
+        prompt.mark_error();
+        let mut env = Env::new();
+        let mut out = Vec::new();
+
+        process_input("1 + 1", &mut prompt, &mut env, &mut out, true).expect("process success");
+        assert!(matches!(prompt.mode, PromptMode::Ready));
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("[0x00]: 1 + 1"));
+        assert!(rendered.contains("[0x00]: 2"));
+    }
+
+    #[test]
+    fn process_input_error_marks_error_without_prompt() {
+        let mut prompt = PromptState::new(false, false);
+        let mut env = Env::new();
+        let mut out = Vec::new();
+
+        process_input("a ==", &mut prompt, &mut env, &mut out, false)
+            .expect("process failure handles");
+        assert!(matches!(prompt.mode, PromptMode::Error));
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(
+            !rendered.contains("[0x00]:"),
+            "prompt should not appear:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("  1 | a =="),
+            "expected fallback diagnostic snippet:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn run_script_reader_executes_lines_in_single_env() {
         let script = "a = 5\na + 7\n";
         let reader = script.as_bytes();
