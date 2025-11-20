@@ -445,7 +445,6 @@ mod tests {
         static FORCE: Once = Once::new();
         FORCE.call_once(|| control::set_override(true));
     }
-
     #[test]
     fn resolve_color_setting_honors_preference() {
         control::set_override(false);
