@@ -421,15 +421,22 @@ impl PromptState {
     }
 
     fn counter_width(value: usize) -> usize {
-        let mut width = 2;
+        let mut width = 2usize;
+        let max_width = (usize::BITS / 4) as usize;
         let mut threshold: usize = 0xFF;
-        while value > threshold {
-            width *= 2;
-            threshold = (1usize << (width * 4)) - 1;
-            if width >= 32 {
-                break;
-            }
+
+        while value > threshold && width < max_width {
+            width = width.saturating_mul(2).min(max_width);
+            let bits: u32 = width
+                .checked_mul(4)
+                .and_then(|b| b.try_into().ok())
+                .unwrap_or(usize::BITS);
+            threshold = match bits {
+                b if b >= usize::BITS => usize::MAX,
+                b => (1usize.checked_shl(b).unwrap_or(usize::MAX)).saturating_sub(1),
+            };
         }
+
         width
     }
 
@@ -497,6 +504,12 @@ mod tests {
         assert_eq!(PromptState::counter_width(0x100), 4);
         assert_eq!(PromptState::counter_width(0xFFFF), 4);
         assert_eq!(PromptState::counter_width(0x1_0000), 8);
+    }
+
+    #[test]
+    fn counter_width_caps_at_pointer_bits() {
+        let max_width = (usize::BITS / 4) as usize;
+        assert_eq!(PromptState::counter_width(usize::MAX), max_width);
     }
 
     #[test]
