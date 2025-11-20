@@ -8,8 +8,6 @@ Abacus is a experimental, interpreted functional programming language with a ple
 
 ![repl](assets/repl.png)
 
----
-
 ## Highlights
 
 - Persistent REPL environment with history and an ANSI-colored prompt.
