@@ -5,7 +5,7 @@ use crate::{
     parser::ast::{BinOp, Expr, FuncArm, Literal, Pattern, Stmt, UnaryOp},
 };
 
-use super::{error::EvalError, value::Value};
+use super::{error::EvalError, values::Value};
 
 #[derive(Debug)]
 pub struct Env {

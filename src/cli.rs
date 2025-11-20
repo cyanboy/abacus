@@ -8,15 +8,15 @@ use std::{
 use miette::{NamedSource, Report};
 
 use crate::{
-    colors::{
-        BOLD, INSTRUCTION_DIM_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY,
-        PROMPT_BRACKET_WARNING, PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, RESET,
-        TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
-    },
     interpreter::Env,
     lexer::Lexer,
     parser::Parser,
     repl::{create_editor, format_value, print_report},
+    ui::colors::{
+        BOLD, INSTRUCTION_DIM_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY,
+        PROMPT_BRACKET_WARNING, PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, RESET,
+        TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
+    },
 };
 
 const TITLE: &str = "[ABACUS - Calculator REPL]";

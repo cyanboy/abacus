@@ -16,12 +16,12 @@ use rustyline::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, RESET, VALUE_OUTPUT},
     interpreter::Value,
     lexer::{
         Lexer,
         token::{Token, TokenKind},
     },
+    ui::colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, RESET, VALUE_OUTPUT},
 };
 
 #[derive(Clone, Copy)]
