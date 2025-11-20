@@ -231,3 +231,46 @@ fn is_function_name<'a>(tokens: &[Token<'a>], index: usize) -> bool {
         Some(TokenKind::OpenParen)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::borrow::Cow;
+
+    #[test]
+    fn highlight_without_color_passes_through() {
+        let helper = ReplHelper::new(false);
+        match helper.highlight("1 + 2", 0) {
+            Cow::Borrowed(text) => assert_eq!(text, "1 + 2"),
+            Cow::Owned(_) => panic!("should not allocate when color disabled"),
+        }
+    }
+
+    #[test]
+    fn highlight_with_color_marks_tokens() {
+        let helper = ReplHelper::new(true);
+        let highlighted = helper.highlight("foo(1 + 2)", 0).into_owned();
+        assert!(highlighted.contains(FUNCTION_CYAN));
+        assert!(highlighted.contains(OPERATOR_BLUE));
+        assert!(highlighted.contains(RESET));
+    }
+
+    #[test]
+    fn format_value_adds_style_when_colored() {
+        let value = Value::Int(8);
+        assert_eq!(format_value(&value, false), "8");
+        let colored = format_value(&value, true);
+        assert!(colored.starts_with(VALUE_OUTPUT));
+        assert!(colored.ends_with(RESET));
+    }
+
+    #[test]
+    fn print_report_without_color_uses_fallback() {
+        let mut out = Vec::new();
+        let report = Report::msg("boom");
+        print_report(&mut out, "a + b", report, false).expect("print_report");
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("a + b"));
+        assert!(rendered.contains("^"));
+    }
+}

@@ -119,4 +119,63 @@ mod tests {
         assert_eq!(offset, 2);
         assert_eq!(source_span.len(), 3);
     }
+
+    #[test]
+    fn span_len_and_empty_behave() {
+        let empty = Span::new(4, 4);
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+
+        let non_empty = Span::new(1, 6);
+        assert!(!non_empty.is_empty());
+        assert_eq!(non_empty.len(), 5);
+    }
+
+    #[test]
+    fn span_display_renders_range() {
+        let span = Span::new(3, 7);
+        assert_eq!(span.to_string(), "3..7");
+    }
+
+    #[test]
+    fn token_kind_display_matches_source_lexeme() {
+        let cases = [
+            (TokenKind::Identifier("foo"), "foo"),
+            (TokenKind::Integer(42), "42"),
+            (TokenKind::Float(1.5), "1.5"),
+            (TokenKind::Bool(true), "true"),
+            (TokenKind::Assign, "="),
+            (TokenKind::Plus, "+"),
+            (TokenKind::Minus, "-"),
+            (TokenKind::Star, "*"),
+            (TokenKind::Slash, "/"),
+            (TokenKind::Percent, "%"),
+            (TokenKind::Bang, "!"),
+            (TokenKind::Caret, "^"),
+            (TokenKind::Eq, "=="),
+            (TokenKind::Gt, ">"),
+            (TokenKind::GtEq, ">="),
+            (TokenKind::Lt, "<"),
+            (TokenKind::LtEq, "<="),
+            (TokenKind::Ne, "!="),
+            (TokenKind::BitOr, "|"),
+            (TokenKind::Or, "||"),
+            (TokenKind::BitAnd, "&"),
+            (TokenKind::And, "&&"),
+            (TokenKind::Comma, ","),
+            (TokenKind::OpenParen, "("),
+            (TokenKind::CloseParen, ")"),
+        ];
+        for (kind, expected) in cases {
+            assert_eq!(kind.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn span_into_source_span_expands_empty_to_single_byte() {
+        let span = Span::new(5, 5);
+        let src = span.into_source_span();
+        assert_eq!(src.offset(), 5);
+        assert_eq!(src.len(), 1);
+    }
 }
