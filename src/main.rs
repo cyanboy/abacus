@@ -23,7 +23,7 @@ struct Cli {
     expr: Option<String>,
 
     /// Disable ANSI color output
-    #[arg(long = "no-color", short = 'n')]
+    #[arg(long = "no-color")]
     no_color: bool,
 
     /// Execute the given Abacus source file
