@@ -42,6 +42,10 @@ impl Span {
         Self { start, end }
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
