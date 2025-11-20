@@ -1,28 +1,26 @@
-pub const RESET: &str = "\x1b[0m";
-pub const BOLD: &str = "\x1b[1m";
+use colored::Color;
 
-// Title palette
-pub const TITLE_RAINBOW: [&str; 6] = [
-    "\x1b[31m", "\x1b[33m", "\x1b[32m", "\x1b[36m", "\x1b[34m", "\x1b[35m",
+pub const TITLE_RAINBOW: [Color; 6] = [
+    Color::Red,
+    Color::Yellow,
+    Color::Green,
+    Color::Cyan,
+    Color::Blue,
+    Color::Magenta,
 ];
-pub const TITLE_ACCENT_BLUE: &str = "\x1b[34m";
-pub const TITLE_BRACKET_WHITE: &str = "\x1b[37m";
+pub const TITLE_ACCENT_BLUE: Color = Color::Blue;
+pub const TITLE_BRACKET_WHITE: Color = Color::White;
 
-// Instruction line
-pub const INSTRUCTION_DIM_GREEN: &str = "\x1b[2;32m";
+pub const PROMPT_READY: Color = Color::BrightGreen;
+pub const PROMPT_ERROR: Color = Color::BrightRed;
+pub const PROMPT_WARNING: Color = Color::BrightYellow;
+pub const PROMPT_BRACKET_READY: Color = Color::Green;
+pub const PROMPT_BRACKET_ERROR: Color = Color::Red;
+pub const PROMPT_BRACKET_WARNING: Color = Color::Yellow;
 
-// Prompt styling
-pub const PROMPT_READY: &str = "\x1b[1;92m";
-pub const PROMPT_ERROR: &str = "\x1b[1;31m";
-pub const PROMPT_WARNING: &str = "\x1b[1;33m";
-pub const PROMPT_BRACKET_READY: &str = "\x1b[32m";
-pub const PROMPT_BRACKET_ERROR: &str = "\x1b[31m";
-pub const PROMPT_BRACKET_WARNING: &str = "\x1b[33m";
+pub const VALUE_OUTPUT: Color = Color::BrightYellow;
+pub const LITERAL_YELLOW: Color = Color::BrightYellow;
+pub const FUNCTION_CYAN: Color = Color::BrightCyan;
+pub const OPERATOR_BLUE: Color = Color::BrightBlue;
 
-// REPL syntax highlighting
-pub const LITERAL_YELLOW: &str = "\x1b[93m";
-pub const FUNCTION_CYAN: &str = "\x1b[96m";
-pub const OPERATOR_BLUE: &str = "\x1b[94m";
-
-// Output styling
-pub const VALUE_OUTPUT: &str = "\x1b[93m";
+pub const INSTRUCTION_GREEN: Color = Color::Green;

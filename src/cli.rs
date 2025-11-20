@@ -1,10 +1,10 @@
 use std::{
-    fmt::Write,
     fs::File,
     io::{self, BufRead, Write as IoWrite},
     path::Path,
 };
 
+use colored::Colorize;
 use miette::{NamedSource, Report};
 
 use crate::{
@@ -13,9 +13,9 @@ use crate::{
     parser::Parser,
     repl::{create_editor, format_value, print_report},
     ui::colors::{
-        BOLD, INSTRUCTION_DIM_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY,
-        PROMPT_BRACKET_WARNING, PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, RESET,
-        TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
+        INSTRUCTION_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY, PROMPT_BRACKET_WARNING,
+        PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE,
+        TITLE_RAINBOW,
     },
 };
 
@@ -37,9 +37,15 @@ pub fn run() {
 }
 
 pub fn run_with_config(config: RunConfig) {
-    if config.color {
+    let color_enabled = resolve_color_setting(config.color);
+    if color_enabled {
         println!("{}", colorize_title(TITLE, true));
-        println!("{INSTRUCTION_DIM_GREEN}Type expressions or 'quit' to exit{RESET}\n");
+        println!(
+            "{}\n",
+            "Type expressions or 'quit' to exit"
+                .color(INSTRUCTION_GREEN)
+                .dimmed()
+        );
     } else {
         println!("{}", colorize_title(TITLE, false));
         println!("Type expressions or 'quit' to exit\n");
@@ -53,9 +59,9 @@ pub fn run_with_config(config: RunConfig) {
         return;
     }
 
-    let mut rl = create_editor(config.color).expect("failed to initialize REPL editor");
+    let mut rl = create_editor(color_enabled).expect("failed to initialize REPL editor");
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new(config.color, true);
+    let mut prompt_state = PromptState::new(color_enabled, true);
 
     loop {
         let prompt = prompt_state.prompt();
@@ -67,7 +73,9 @@ pub fn run_with_config(config: RunConfig) {
                     let _ = io::stdout().flush();
                     continue;
                 }
-                rl.add_history_entry(input).unwrap();
+                if let Err(err) = rl.add_history_entry(input) {
+                    eprintln!("warning: failed to record history entry: {err}");
+                }
 
                 if input == "quit" || input == "exit" {
                     println!("Goodbye!");
@@ -107,8 +115,9 @@ where
     R: BufRead,
     W: IoWrite,
 {
+    let color_enabled = resolve_color_setting(config.color);
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new(config.color, true);
+    let mut prompt_state = PromptState::new(color_enabled, true);
     let mut line = String::new();
 
     loop {
@@ -155,8 +164,9 @@ pub fn run_expression(expr: &str, config: RunConfig) -> io::Result<()> {
     if trimmed.is_empty() {
         return Ok(());
     }
+    let color_enabled = resolve_color_setting(config.color);
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new(config.color, false);
+    let mut prompt_state = PromptState::new(color_enabled, false);
     let mut stdout = io::stdout();
     process_input(trimmed, &mut prompt_state, &mut env, &mut stdout, false)?;
     stdout.flush()
@@ -167,8 +177,9 @@ where
     R: BufRead,
     W: IoWrite,
 {
+    let color_enabled = resolve_color_setting(config.color);
     let mut env = Env::new();
-    let mut prompt_state = PromptState::new(config.color, false);
+    let mut prompt_state = PromptState::new(color_enabled, false);
     for line in reader.lines() {
         let line = line?;
         let trimmed = line.trim();
@@ -185,85 +196,73 @@ fn colorize_title(title: &str, color_enabled: bool) -> String {
     if !color_enabled {
         return title.to_string();
     }
-    let mut colored = String::with_capacity(title.len() * (BOLD.len() + RESET.len()));
-    let mut title_chars = title.splitn(2, ' ');
-    let name = title_chars.next().unwrap_or(title);
-    let rest = title_chars.next().unwrap_or("");
+    let mut colored_title = String::with_capacity(title.len() * 2);
+    let mut title_parts = title.splitn(2, ' ');
+    let name = title_parts.next().unwrap_or(title);
+    let rest = title_parts.next().unwrap_or("");
 
     let mut color_index = 0;
     for ch in name.chars() {
         if ch == '[' {
-            colored.push_str(BOLD);
-            colored.push_str(TITLE_BRACKET_WHITE);
-            colored.push(ch);
-            colored.push_str(RESET);
+            colored_title.push_str(&format!("{}", "[".color(TITLE_BRACKET_WHITE).bold()));
             continue;
         }
         let color = TITLE_RAINBOW[color_index % TITLE_RAINBOW.len()];
-        colored.push_str(BOLD);
-        colored.push_str(color);
-        colored.push(ch);
+        colored_title.push_str(&format!("{}", ch.to_string().color(color).bold()));
         color_index += 1;
     }
-    colored.push_str(RESET);
 
     if !rest.is_empty() {
-        colored.push(' ');
+        colored_title.push(' ');
         let mut rest_chars = rest.chars();
         if let Some(first) = rest_chars.next() {
             if first == '-' {
-                colored.push_str(BOLD);
-                colored.push_str(TITLE_BRACKET_WHITE);
-                colored.push(first);
-                colored.push_str(RESET);
-
+                colored_title.push_str(&format!("{}", "-".color(TITLE_BRACKET_WHITE).bold()));
                 let mut remaining: String = rest_chars.collect();
                 let has_closing_bracket = remaining.ends_with(']');
                 if has_closing_bracket {
                     remaining.pop();
                 }
-
                 if !remaining.is_empty() {
-                    colored.push_str(BOLD);
-                    colored.push_str(TITLE_ACCENT_BLUE);
-                    colored.push_str(&remaining);
-                    colored.push_str(RESET);
+                    colored_title
+                        .push_str(&format!("{}", remaining.color(TITLE_ACCENT_BLUE).bold()));
                 }
-
                 if has_closing_bracket {
-                    colored.push_str(BOLD);
-                    colored.push_str(TITLE_BRACKET_WHITE);
-                    colored.push(']');
-                    colored.push_str(RESET);
+                    colored_title.push_str(&format!("{}", "]".color(TITLE_BRACKET_WHITE).bold()));
                 }
             } else {
                 let mut remaining = String::new();
                 remaining.push(first);
                 remaining.extend(rest_chars);
-
                 let has_closing_bracket = remaining.ends_with(']');
                 if has_closing_bracket {
                     remaining.pop();
                 }
-
                 if !remaining.is_empty() {
-                    colored.push_str(BOLD);
-                    colored.push_str(TITLE_ACCENT_BLUE);
-                    colored.push_str(&remaining);
-                    colored.push_str(RESET);
+                    colored_title
+                        .push_str(&format!("{}", remaining.color(TITLE_ACCENT_BLUE).bold()));
                 }
-
                 if has_closing_bracket {
-                    colored.push_str(BOLD);
-                    colored.push_str(TITLE_BRACKET_WHITE);
-                    colored.push(']');
-                    colored.push_str(RESET);
+                    colored_title.push_str(&format!("{}", "]".color(TITLE_BRACKET_WHITE).bold()));
                 }
             }
         }
     }
 
-    colored
+    colored_title
+}
+
+fn resolve_color_setting(prefer_color: bool) -> bool {
+    use colored::control;
+    if !prefer_color {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        let _ = control::set_virtual_terminal(true);
+    }
+    control::set_override(true);
+    true
 }
 
 fn process_input<W: IoWrite>(
@@ -374,49 +373,29 @@ impl PromptState {
     }
 
     fn prompt_prefix(&self) -> String {
-        let (bracket_color, counter_color) = self.prompt_colors();
         let width = Self::counter_width(self.line_number);
-
-        let mut prompt = String::new();
-        if self.color_enabled {
-            prompt.push_str(RESET);
-            prompt.push_str(bracket_color);
-        }
-        prompt.push('[');
-        if self.color_enabled {
-            prompt.push_str(RESET);
-            prompt.push_str(counter_color);
-        }
-        prompt.push_str("0x");
-        write!(
-            &mut prompt,
-            "{value:0width$X}",
+        let counter = format!(
+            "0x{value:0width$X}",
             value = self.line_number,
             width = width
-        )
-        .unwrap();
-        if self.color_enabled {
-            prompt.push_str(RESET);
-            prompt.push_str(bracket_color);
-        }
-        prompt.push_str("]:");
-        if self.color_enabled {
-            prompt.push_str(RESET);
-        }
-        prompt.push(' ');
+        );
 
-        prompt
+        if !self.color_enabled {
+            return format!("[{counter}]: ");
+        }
+
+        let (bracket_color, counter_color) = self.prompt_colors();
+        let open = format!("{}", "[".color(bracket_color).bold());
+        let counter_colored = format!("{}", counter.color(counter_color).bold());
+        let close = format!("{}", "]".color(bracket_color).bold());
+        format!("{open}{counter_colored}{close}: ")
     }
 
-    fn prompt_colors(&self) -> (&'static str, &'static str) {
-        if !self.color_enabled {
-            ("", "")
-        } else {
-            match self.mode {
-                PromptMode::Ready => (PROMPT_BRACKET_READY, PROMPT_READY),
-                PromptMode::Error => (PROMPT_BRACKET_ERROR, PROMPT_ERROR),
-                PromptMode::Warning => (PROMPT_BRACKET_WARNING, PROMPT_WARNING),
-            }
+    fn prompt_colors(&self) -> (colored::Color, colored::Color) {
+        match self.mode {
+            PromptMode::Ready => (PROMPT_BRACKET_READY, PROMPT_READY),
+            PromptMode::Error => (PROMPT_BRACKET_ERROR, PROMPT_ERROR),
+            PromptMode::Warning => (PROMPT_BRACKET_WARNING, PROMPT_WARNING),
         }
     }
 
@@ -459,7 +438,13 @@ enum PromptMode {
 mod tests {
     use super::*;
     use crate::ui::colors::PROMPT_WARNING;
-    use std::io::Cursor;
+    use colored::{Colorize, control};
+    use std::{io::Cursor, sync::Once};
+
+    fn ensure_color_override() {
+        static FORCE: Once = Once::new();
+        FORCE.call_once(|| control::set_override(true));
+    }
 
     #[test]
     fn noninteractive_handles_blank_lines_and_errors() {
@@ -514,20 +499,26 @@ mod tests {
 
     #[test]
     fn colorize_title_colored_and_plain() {
+        ensure_color_override();
         let plain = colorize_title("[ABACUS - Calculator REPL]", false);
         assert_eq!(plain, "[ABACUS - Calculator REPL]");
 
         let colored = colorize_title("[ABACUS - Calculator REPL]", true);
-        assert!(colored.contains(TITLE_RAINBOW[0]));
-        assert!(colored.contains(TITLE_ACCENT_BLUE));
+        assert!(colored.contains('\x1b'));
+        assert_ne!(colored, plain);
     }
 
     #[test]
     fn prompt_state_applies_warning_color() {
+        ensure_color_override();
         let mut state = PromptState::new(true, true);
         state.mark_warning();
         let prompt = state.prompt();
-        assert!(prompt.contains(PROMPT_WARNING));
+        let expected = format!("{}", "0x00".color(PROMPT_WARNING).bold());
+        assert!(
+            prompt.contains(&expected),
+            "prompt should contain colored counter: {prompt:?}"
+        );
     }
 
     #[test]

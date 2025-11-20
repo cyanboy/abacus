@@ -24,6 +24,7 @@ miette = { version = "7.6.0", features = ["fancy", "derive"] }
 rustyline = "17.0.2"
 thiserror = "2.0.17"
 unicode-width = "0.1"
+colored = "2.1"
 
 [[bin]]
 name = "abc"

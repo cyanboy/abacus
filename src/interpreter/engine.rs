@@ -68,6 +68,18 @@ impl Env {
                 for arm in arms.iter() {
                     let specificity = pattern_specificity(&arm.params);
                     let rc = Rc::new(arm.clone());
+
+                    if let Some(existing_idx) = entry
+                        .iter()
+                        .position(|existing| existing.arm.params == arm.params)
+                    {
+                        entry[existing_idx] = FuncEntry {
+                            arm: rc,
+                            specificity,
+                        };
+                        continue;
+                    }
+
                     let insert_idx = entry
                         .iter()
                         .position(|existing| existing.specificity < specificity)
@@ -745,6 +757,23 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn redefining_function_replaces_existing_arm() {
+        let mut env = Env::new();
+        let def1 = parse_stmt_with_spans("f(x) = x + 1");
+        env.eval_stmt(&def1).expect("function registers");
+
+        let value = expect_value(&mut env, parse_expr_with_spans("f(5)"));
+        assert_eq!(value, Value::Int(6));
+
+        let def2 = parse_stmt_with_spans("f(x) = x * 2");
+        env.eval_stmt(&def2)
+            .expect("function redefinition succeeds");
+
+        let value = expect_value(&mut env, parse_expr_with_spans("f(5)"));
+        assert_eq!(value, Value::Int(10));
     }
 
     fn parse_expr_with_spans(input: &str) -> Expr {
