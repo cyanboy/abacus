@@ -16,7 +16,6 @@ Abacus is a experimental, interpreted functional programming language with a ple
 
 ![repl](assets/repl.png)
 
----
 
 ## Install
 
@@ -26,7 +25,6 @@ Abacus is a experimental, interpreted functional programming language with a ple
 cargo install abacus
 ```
 
----
 
 ## Try It
 
@@ -69,15 +67,11 @@ REPL sessions retain history, coloring, and diagnostic output between entries:
 [0x08]: true
 ```
 
----
-
 ## Build From Source
 
 ```bash
 cargo build
 ```
-
----
 
 ## License
 
