@@ -403,6 +403,81 @@ mod tests {
     }
 
     #[test]
+    fn bitwise_ops_on_integers() {
+        let mut env = Env::new();
+        let and = expect_value(&mut env, binary(lit_int(6), BinOp::BitAnd, lit_int(3)));
+        assert_eq!(and, Value::Int(2));
+
+        let or = expect_value(&mut env, binary(lit_int(4), BinOp::BitOr, lit_int(1)));
+        assert_eq!(or, Value::Int(5));
+
+        let xor = expect_value(&mut env, binary(lit_int(10), BinOp::Xor, lit_int(15)));
+        assert_eq!(xor, Value::Int(5));
+    }
+
+    #[test]
+    fn literal_bool_and_float_patterns_match_correctly() {
+        let mut env = Env::new();
+        let arms = vec![
+            FuncArm {
+                params: vec![Pattern::Lit(Literal::Bool(true))],
+                body: lit_int(1),
+            },
+            FuncArm {
+                params: vec![Pattern::Lit(Literal::Float(3.14))],
+                body: lit_int(2),
+            },
+        ];
+        let func = Stmt::FunctionDefinition {
+            name: "check".into(),
+            arms,
+        };
+        env.eval_stmt(&func).unwrap();
+
+        let result_true = expect_value(
+            &mut env,
+            call("check", vec![Expr::Lit(Literal::Bool(true), dummy_span())]),
+        );
+        assert_eq!(result_true, Value::Int(1));
+
+        let result_float = expect_value(
+            &mut env,
+            call("check", vec![Expr::Lit(Literal::Float(3.14), dummy_span())]),
+        );
+        assert_eq!(result_float, Value::Int(2));
+
+        let no_match = env.eval_stmt(&Stmt::Expression(call(
+            "check",
+            vec![Expr::Lit(Literal::Bool(false), dummy_span())],
+        )));
+        assert!(matches!(no_match, Err(EvalError::NoMatchingArm { .. })));
+    }
+
+    #[test]
+    fn mixed_numeric_equality_and_comparison() {
+        let mut env = Env::new();
+        let eq_val = expect_value(
+            &mut env,
+            binary(
+                Expr::Lit(Literal::Int(5), dummy_span()),
+                BinOp::Eq,
+                Expr::Lit(Literal::Float(5.0), dummy_span()),
+            ),
+        );
+        assert_eq!(eq_val, Value::Bool(true));
+
+        let lt_val = expect_value(
+            &mut env,
+            binary(
+                Expr::Lit(Literal::Float(4.5), dummy_span()),
+                BinOp::Lt,
+                Expr::Lit(Literal::Int(5), dummy_span()),
+            ),
+        );
+        assert_eq!(lt_val, Value::Bool(true));
+    }
+
+    #[test]
     fn bool_ops_require_bool_operands() {
         let mut env = Env::new();
         let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::And, lit_bool(true)))

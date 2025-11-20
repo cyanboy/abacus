@@ -16,3 +16,15 @@ impl fmt::Display for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Value;
+
+    #[test]
+    fn display_formats_variants_plainly() {
+        assert_eq!(Value::Int(-7).to_string(), "-7");
+        assert_eq!(Value::Float(3.25).to_string(), "3.25");
+        assert_eq!(Value::Bool(false).to_string(), "false");
+    }
+}

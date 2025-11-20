@@ -575,6 +575,27 @@ mod tests {
     }
 
     #[test]
+    fn prefix_operators_chain_correctly() {
+        let Expr::Unary { op, rhs, .. } = parse_expr("!-x") else {
+            panic!("expected unary expression");
+        };
+        assert_eq!(op, UnaryOp::Not);
+        let Expr::Unary { op: inner_op, .. } = *rhs else {
+            panic!("expected nested unary");
+        };
+        assert_eq!(inner_op, UnaryOp::Neg);
+    }
+
+    #[test]
+    fn nested_calls_parse_properly() {
+        let Expr::Call { callee, args, .. } = parse_expr("f()(1)") else {
+            panic!("expected call expression");
+        };
+        assert!(matches!(*callee, Expr::Call { .. }));
+        assert_eq!(args.len(), 1);
+    }
+
+    #[test]
     fn reports_unclosed_grouping() {
         let err = parse("(1 + 2").unwrap_err();
         assert!(
@@ -616,6 +637,24 @@ mod tests {
         } else {
             panic!("expected EOF error for trailing identifier, got {err:?}");
         }
+    }
+
+    #[test]
+    fn lookahead_returns_false_for_unbalanced_params() {
+        let mut parser = Parser::new(Lexer::new("(x + 1"));
+        assert!(
+            !parser.lookahead_func_def_after_params().unwrap(),
+            "should not treat unbalanced parens as function definition"
+        );
+    }
+
+    #[test]
+    fn lookahead_requires_assign_after_params() {
+        let mut parser = Parser::new(Lexer::new("(x) 1"));
+        assert!(
+            !parser.lookahead_func_def_after_params().unwrap(),
+            "missing '=' should not trigger function definition"
+        );
     }
 
     fn expect_expr(stmt: Stmt) -> Expr {

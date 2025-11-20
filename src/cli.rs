@@ -447,3 +447,83 @@ enum PromptMode {
     Error,
     Warning,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::colors::PROMPT_WARNING;
+    use std::io::Cursor;
+
+    #[test]
+    fn noninteractive_handles_blank_lines_and_errors() {
+        let input = b"2 + 2\n\nundefined()\nquit\n";
+        let reader = Cursor::new(&input[..]);
+        let mut buffer = Vec::new();
+        let config = RunConfig { color: false };
+
+        run_noninteractive_with_config(reader, &mut buffer, config).expect("run noninteractive");
+
+        let output = String::from_utf8(buffer).expect("utf8");
+        assert!(
+            output.contains("[0x00]: 2 + 2"),
+            "missing echoed input:\n{output}"
+        );
+        assert!(
+            output.contains("[0x00]: 4"),
+            "missing value output:\n{output}"
+        );
+        assert!(
+            output.contains("[0x01]: \n"),
+            "blank line should emit empty prompt:\n{output}"
+        );
+        assert!(
+            output.contains("[0x01]: undefined()"),
+            "expected echoed failing input:\n{output}"
+        );
+        assert!(
+            output.contains("  1 | undefined()"),
+            "expected fallback diagnostic snippet:\n{output}"
+        );
+        assert!(
+            output.contains("Goodbye!"),
+            "missing goodbye message:\n{output}"
+        );
+    }
+
+    #[test]
+    fn counter_width_expands_in_hex_ranges() {
+        assert_eq!(PromptState::counter_width(0x00), 2);
+        assert_eq!(PromptState::counter_width(0xFF), 2);
+        assert_eq!(PromptState::counter_width(0x100), 4);
+        assert_eq!(PromptState::counter_width(0xFFFF), 4);
+        assert_eq!(PromptState::counter_width(0x1_0000), 8);
+    }
+
+    #[test]
+    fn colorize_title_colored_and_plain() {
+        let plain = colorize_title("[ABACUS - Calculator REPL]", false);
+        assert_eq!(plain, "[ABACUS - Calculator REPL]");
+
+        let colored = colorize_title("[ABACUS - Calculator REPL]", true);
+        assert!(colored.contains(TITLE_RAINBOW[0]));
+        assert!(colored.contains(TITLE_ACCENT_BLUE));
+    }
+
+    #[test]
+    fn prompt_state_applies_warning_color() {
+        let mut state = PromptState::new(true, true);
+        state.mark_warning();
+        let prompt = state.prompt();
+        assert!(prompt.contains(PROMPT_WARNING));
+    }
+
+    #[test]
+    fn run_script_reader_executes_lines_in_single_env() {
+        let script = "a = 5\na + 7\n";
+        let reader = script.as_bytes();
+        let mut out = Vec::new();
+        run_script_reader(reader, &mut out, RunConfig { color: false }).expect("script");
+        let output = String::from_utf8(out).expect("utf8");
+        assert!(output.contains("12"));
+    }
+}

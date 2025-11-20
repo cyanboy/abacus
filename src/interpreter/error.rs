@@ -86,3 +86,42 @@ impl EvalError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span() -> Span {
+        Span::new(1, 4)
+    }
+
+    #[test]
+    fn with_span_overrides_span_for_all_variants() {
+        let src = span().into_source_span();
+
+        match EvalError::undefined_var("x".into(), Span::new(0, 1)).with_span(span()) {
+            EvalError::UndefinedVar { span: Some(s), .. } => assert_eq!(s, src),
+            _ => panic!("unexpected variant"),
+        }
+
+        match EvalError::undefined_func("f".into(), Span::new(0, 1)).with_span(span()) {
+            EvalError::UndefinedFunc { span: Some(s), .. } => assert_eq!(s, src),
+            _ => panic!("unexpected variant"),
+        }
+
+        match EvalError::no_matching_arm("f".into(), Span::new(0, 1)).with_span(span()) {
+            EvalError::NoMatchingArm { span: Some(s), .. } => assert_eq!(s, src),
+            _ => panic!("unexpected variant"),
+        }
+
+        match EvalError::type_error("bad", Span::new(0, 1)).with_span(span()) {
+            EvalError::TypeError { span: Some(s), .. } => assert_eq!(s, src),
+            _ => panic!("unexpected variant"),
+        }
+
+        match EvalError::divide_by_zero(Span::new(0, 1)).with_span(span()) {
+            EvalError::DivideByZero { span: Some(s) } => assert_eq!(s, src),
+            _ => panic!("unexpected variant"),
+        }
+    }
+}
