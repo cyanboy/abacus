@@ -4,7 +4,6 @@ use std::{
     path::Path,
 };
 
-use colored::Colorize;
 use miette::{NamedSource, Report};
 
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
         PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE,
         TITLE_RAINBOW,
     },
+    ui::style::{colorize_bold, colorize_dim},
 };
 
 const TITLE: &str = "[ABACUS - Calculator REPL]";
@@ -40,12 +40,12 @@ pub fn run_with_config(config: RunConfig) {
     let color_enabled = resolve_color_setting(config.color);
     if color_enabled {
         println!("{}", colorize_title(TITLE, true));
-        println!(
-            "{}\n",
-            "Type expressions or 'quit' to exit"
-                .color(INSTRUCTION_GREEN)
-                .dimmed()
+        let instructions = colorize_dim(
+            "Type expressions or 'quit' to exit",
+            INSTRUCTION_GREEN,
+            true,
         );
+        println!("{instructions}\n");
     } else {
         println!("{}", colorize_title(TITLE, false));
         println!("Type expressions or 'quit' to exit\n");
@@ -204,11 +204,11 @@ fn colorize_title(title: &str, color_enabled: bool) -> String {
     let mut color_index = 0;
     for ch in name.chars() {
         if ch == '[' {
-            colored_title.push_str(&format!("{}", "[".color(TITLE_BRACKET_WHITE).bold()));
+            colored_title.push_str(&colorize_bold("[", TITLE_BRACKET_WHITE, true));
             continue;
         }
         let color = TITLE_RAINBOW[color_index % TITLE_RAINBOW.len()];
-        colored_title.push_str(&format!("{}", ch.to_string().color(color).bold()));
+        colored_title.push_str(&colorize_bold(&ch.to_string(), color, true));
         color_index += 1;
     }
 
@@ -217,18 +217,17 @@ fn colorize_title(title: &str, color_enabled: bool) -> String {
         let mut rest_chars = rest.chars();
         if let Some(first) = rest_chars.next() {
             if first == '-' {
-                colored_title.push_str(&format!("{}", "-".color(TITLE_BRACKET_WHITE).bold()));
+                colored_title.push_str(&colorize_bold("-", TITLE_BRACKET_WHITE, true));
                 let mut remaining: String = rest_chars.collect();
                 let has_closing_bracket = remaining.ends_with(']');
                 if has_closing_bracket {
                     remaining.pop();
                 }
                 if !remaining.is_empty() {
-                    colored_title
-                        .push_str(&format!("{}", remaining.color(TITLE_ACCENT_BLUE).bold()));
+                    colored_title.push_str(&colorize_bold(&remaining, TITLE_ACCENT_BLUE, true));
                 }
                 if has_closing_bracket {
-                    colored_title.push_str(&format!("{}", "]".color(TITLE_BRACKET_WHITE).bold()));
+                    colored_title.push_str(&colorize_bold("]", TITLE_BRACKET_WHITE, true));
                 }
             } else {
                 let mut remaining = String::new();
@@ -239,11 +238,10 @@ fn colorize_title(title: &str, color_enabled: bool) -> String {
                     remaining.pop();
                 }
                 if !remaining.is_empty() {
-                    colored_title
-                        .push_str(&format!("{}", remaining.color(TITLE_ACCENT_BLUE).bold()));
+                    colored_title.push_str(&colorize_bold(&remaining, TITLE_ACCENT_BLUE, true));
                 }
                 if has_closing_bracket {
-                    colored_title.push_str(&format!("{}", "]".color(TITLE_BRACKET_WHITE).bold()));
+                    colored_title.push_str(&colorize_bold("]", TITLE_BRACKET_WHITE, true));
                 }
             }
         }
@@ -253,15 +251,34 @@ fn colorize_title(title: &str, color_enabled: bool) -> String {
 }
 
 fn resolve_color_setting(prefer_color: bool) -> bool {
-    use colored::control;
+    use std::io::IsTerminal;
+
     if !prefer_color {
         return false;
     }
-    #[cfg(windows)]
-    {
-        let _ = control::set_virtual_terminal(true);
+
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
     }
-    control::set_override(true);
+
+    if let Ok(force) = std::env::var("CLICOLOR_FORCE") {
+        if force != "0" {
+            return true;
+        }
+        return false;
+    }
+
+    let is_tty = std::io::stdout().is_terminal();
+    if !is_tty {
+        return false;
+    }
+
+    if let Ok(clicolor) = std::env::var("CLICOLOR")
+        && clicolor == "0"
+    {
+        return false;
+    }
+
     true
 }
 
@@ -385,9 +402,9 @@ impl PromptState {
         }
 
         let (bracket_color, counter_color) = self.prompt_colors();
-        let open = format!("{}", "[".color(bracket_color).bold());
-        let counter_colored = format!("{}", counter.color(counter_color).bold());
-        let close = format!("{}", "]".color(bracket_color).bold());
+        let open = colorize_bold("[", bracket_color, true);
+        let counter_colored = colorize_bold(&counter, counter_color, true);
+        let close = colorize_bold("]", bracket_color, true);
         format!("{open}{counter_colored}{close}: ")
     }
 
@@ -438,24 +455,69 @@ enum PromptMode {
 mod tests {
     use super::*;
     use crate::ui::colors::PROMPT_WARNING;
-    use colored::{Colorize, control};
-    use std::{io::Cursor, sync::Once};
+    use crate::ui::style::colorize_bold;
+    use std::{
+        env,
+        io::{Cursor, IsTerminal},
+        sync::{Mutex, MutexGuard},
+    };
 
-    fn ensure_color_override() {
-        static FORCE: Once = Once::new();
-        FORCE.call_once(|| control::set_override(true));
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn set(vars: &[(&'static str, Option<&str>)]) -> Self {
+            let mut saved = Vec::with_capacity(vars.len());
+            for (key, val) in vars {
+                saved.push((*key, env::var(key).ok()));
+                match val {
+                    Some(v) => unsafe { env::set_var(key, v) },
+                    None => unsafe { env::remove_var(key) },
+                }
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, val) in self.saved.drain(..) {
+                if let Some(v) = val {
+                    unsafe { env::set_var(key, v) };
+                } else {
+                    unsafe { env::remove_var(key) };
+                }
+            }
+        }
+    }
+
+    fn env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().expect("env mutex poisoned")
     }
 
     #[test]
     fn resolve_color_setting_honors_preference() {
-        control::set_override(false);
-        assert!(!resolve_color_setting(false));
-        assert!(resolve_color_setting(true));
-        control::set_override(false);
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", None),
+            ("CLICOLOR_FORCE", None),
+            ("CLICOLOR", None),
+        ]);
+        assert!(
+            !resolve_color_setting(false),
+            "explicit preference should disable color"
+        );
     }
 
     #[test]
     fn noninteractive_with_color_renders_colored_prompts() {
+        let _env = env_lock();
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", None),
+            ("CLICOLOR_FORCE", Some("1")),
+            ("CLICOLOR", None),
+        ]);
         let input = b"1 + 1\nquit\n";
         let reader = Cursor::new(&input[..]);
         let mut buffer = Vec::new();
@@ -469,7 +531,28 @@ mod tests {
             "output should contain ANSI:\n{output}"
         );
         assert!(output.contains("0x00"), "prompt counter missing:\n{output}");
-        control::set_override(false);
+    }
+
+    #[test]
+    fn noninteractive_reports_type_error_for_mismatched_equality() {
+        let _env = env_lock();
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", None),
+            ("CLICOLOR_FORCE", Some("1")),
+            ("CLICOLOR", None),
+        ]);
+        let input = b"1 == true\nquit\n";
+        let reader = Cursor::new(&input[..]);
+        let mut buffer = Vec::new();
+
+        run_noninteractive_with_config(reader, &mut buffer, RunConfig { color: true })
+            .expect("run noninteractive");
+
+        let output = String::from_utf8(buffer).expect("utf8");
+        assert!(
+            output.contains("operands must be comparable"),
+            "diagnostic message should surface to users:\n{output}"
+        );
     }
 
     #[test]
@@ -530,7 +613,6 @@ mod tests {
 
     #[test]
     fn colorize_title_colored_and_plain() {
-        ensure_color_override();
         let plain = colorize_title("[ABACUS - Calculator REPL]", false);
         assert_eq!(plain, "[ABACUS - Calculator REPL]");
 
@@ -540,12 +622,67 @@ mod tests {
     }
 
     #[test]
+    fn resolve_color_setting_respects_no_color_and_tty() {
+        let _env = env_lock();
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", Some("1")),
+            ("CLICOLOR_FORCE", None),
+            ("CLICOLOR", None),
+        ]);
+        assert!(
+            !resolve_color_setting(true),
+            "NO_COLOR should disable color even when preferred"
+        );
+        assert!(
+            !resolve_color_setting(false),
+            "preferring no color should disable regardless of env"
+        );
+    }
+
+    #[test]
+    fn resolve_color_setting_honors_clicolor_force() {
+        let _env = env_lock();
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", None),
+            ("CLICOLOR_FORCE", Some("1")),
+            ("CLICOLOR", None),
+        ]);
+        assert!(
+            resolve_color_setting(true),
+            "CLICOLOR_FORCE should enable color even when stdout is not a TTY"
+        );
+    }
+
+    #[test]
+    fn resolve_color_setting_disables_when_not_tty() {
+        let _env = env_lock();
+        let _guard = EnvGuard::set(&[
+            ("NO_COLOR", None),
+            ("CLICOLOR_FORCE", None),
+            ("CLICOLOR", None),
+        ]);
+        let is_tty = std::io::stdout().is_terminal();
+        if !is_tty {
+            assert!(
+                !resolve_color_setting(true),
+                "color should be disabled when not attached to a TTY without force"
+            );
+        } else {
+            // If attached to a TTY in this environment, ensure we can still disable via CLICOLOR=0.
+            let _guard = EnvGuard::set(&[("CLICOLOR", Some("0"))]);
+            assert!(
+                !resolve_color_setting(true),
+                "CLICOLOR=0 should disable color even on a TTY"
+            );
+        }
+    }
+
+    #[test]
     fn prompt_state_applies_warning_color() {
-        ensure_color_override();
         let mut state = PromptState::new(true, true);
         state.mark_warning();
         let prompt = state.prompt();
-        let expected = format!("{}", "0x00".color(PROMPT_WARNING).bold());
+        let expected = colorize_bold("0x00", PROMPT_WARNING, true);
         assert!(
             prompt.contains(&expected),
             "prompt should contain colored counter: {prompt:?}"
@@ -554,11 +691,10 @@ mod tests {
 
     #[test]
     fn prompt_prefix_reflects_error_state() {
-        ensure_color_override();
         let mut state = PromptState::new(true, true);
         state.mark_error();
         let prompt = state.prompt();
-        let expected_bracket = format!("{}", "[".color(PROMPT_BRACKET_ERROR).bold());
+        let expected_bracket = colorize_bold("[", PROMPT_BRACKET_ERROR, true);
         assert!(
             prompt.contains(&expected_bracket),
             "prompt should use error colors: {prompt:?}"

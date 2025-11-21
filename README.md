@@ -49,6 +49,8 @@ Options:
 - Evaluate a single expression and print the result: `abc -e "2 + 2"`
 - Execute a source file (runs each line in order, sharing the same environment): `abc path/to/program.abc`
 - Disable ANSI colors for scripts or terminals that do not support them: add `--no-color` (e.g. `abc --no-color -e "1/3"`)
+- Color is also controlled by common environment variables: `NO_COLOR` disables color, `CLICOLOR_FORCE=1` forces it, and `CLICOLOR=0` disables it unless forced. Color is off when stdout is not a TTY unless forced.
+- Equality is type-strict: ints and floats cross-compare, but comparing booleans to numbers raises a type error instead of silently returning `false`.
 
 REPL sessions retain history, coloring, and diagnostic output between entries:
 

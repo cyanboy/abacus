@@ -288,7 +288,12 @@ fn val_eq(a: &Value, b: &Value) -> Result<bool, EvalError> {
         (Int(x), Float(y)) => (*x as f64) == *y,
         (Float(x), Int(y)) => *x == (*y as f64),
         (Bool(x), Bool(y)) => x == y,
-        _ => false,
+        _ => {
+            return Err(EvalError::TypeError {
+                message: "operands must be comparable",
+                span: None,
+            });
+        }
     })
 }
 
@@ -297,35 +302,33 @@ fn val_eq(a: &Value, b: &Value) -> Result<bool, EvalError> {
 fn match_and_bind(
     params: &[Pattern],
     args: &[Value],
-    span: Span,
+    _span: Span,
 ) -> Result<Option<HashMap<String, Value>>, EvalError> {
     let mut bindings = HashMap::new();
     for (p, a) in params.iter().zip(args) {
         match p {
             Pattern::Identifier(name) => {
                 if let Some(existing) = bindings.get(name) {
-                    if !val_eq(existing, a).map_err(|e| e.with_span(span))? {
-                        return Ok(None);
+                    match val_eq(existing, a) {
+                        Ok(true) => {}
+                        Ok(false) | Err(_) => return Ok(None),
                     }
                 } else {
                     bindings.insert(name.clone(), a.clone());
                 }
             }
-            Pattern::Lit(Literal::Int(n)) => {
-                if !val_eq(a, &Value::Int(*n)).map_err(|e| e.with_span(span))? {
-                    return Ok(None);
-                }
-            }
-            Pattern::Lit(Literal::Float(x)) => {
-                if !val_eq(a, &Value::Float(*x)).map_err(|e| e.with_span(span))? {
-                    return Ok(None);
-                }
-            }
-            Pattern::Lit(Literal::Bool(b)) => {
-                if !val_eq(a, &Value::Bool(*b)).map_err(|e| e.with_span(span))? {
-                    return Ok(None);
-                }
-            }
+            Pattern::Lit(Literal::Int(n)) => match val_eq(a, &Value::Int(*n)) {
+                Ok(true) => {}
+                Ok(false) | Err(_) => return Ok(None),
+            },
+            Pattern::Lit(Literal::Float(x)) => match val_eq(a, &Value::Float(*x)) {
+                Ok(true) => {}
+                Ok(false) | Err(_) => return Ok(None),
+            },
+            Pattern::Lit(Literal::Bool(b)) => match val_eq(a, &Value::Bool(*b)) {
+                Ok(true) => {}
+                Ok(false) | Err(_) => return Ok(None),
+            },
         }
     }
     Ok(Some(bindings))
@@ -710,6 +713,23 @@ mod tests {
     }
 
     #[test]
+    fn equality_type_error_for_incompatible_types() {
+        let mut env = Env::new();
+        let expr = parse_expr_with_spans("1==true");
+        let err = eval_expr_stmt(&mut env, expr).expect_err("expected type error");
+        match err {
+            EvalError::TypeError {
+                message,
+                span: Some(span),
+            } => {
+                assert_eq!(message, "operands must be comparable");
+                assert_source_span(span, 0, 7);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
     fn no_matching_arm_reports_span() {
         let mut env = Env::new();
         let definition = parse_stmt_with_spans("f(x, 1) = x");
@@ -812,7 +832,8 @@ mod tests {
 
     #[test]
     fn val_eq_returns_false_for_mismatched_types() {
-        assert!(!val_eq(&Value::Bool(true), &Value::Int(1)).unwrap());
+        let err = val_eq(&Value::Bool(true), &Value::Int(1)).expect_err("should be type error");
+        assert!(matches!(err, EvalError::TypeError { .. }));
     }
 
     #[test]
