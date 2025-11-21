@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use abacus::{RunConfig, run_expression, run_file, run_with_config};
+use abacus::{
+    RunConfig, interpreter::DEFAULT_MAX_CALL_DEPTH, run_expression, run_file, run_with_config,
+};
 use std::process;
 
 #[derive(Parser, Debug)]
@@ -27,6 +29,14 @@ struct Cli {
     #[arg(long = "no-color")]
     no_color: bool,
 
+    /// Maximum recursion depth before aborting evaluation
+    #[arg(
+        long = "recursion-limit",
+        value_name = "DEPTH",
+        default_value_t = DEFAULT_MAX_CALL_DEPTH
+    )]
+    recursion_limit: usize,
+
     /// Execute the given Abacus source file
     #[arg(value_name = "FILE", conflicts_with = "expr")]
     script: Option<PathBuf>,
@@ -39,6 +49,7 @@ fn main() {
 fn run_cli(cli: Cli) -> i32 {
     let config = RunConfig {
         color: !cli.no_color,
+        recursion_limit: cli.recursion_limit,
     };
 
     if let Some(expr) = cli.expr {

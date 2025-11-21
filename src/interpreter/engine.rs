@@ -13,7 +13,11 @@ pub struct Env {
     scopes: Vec<HashMap<String, Value>>,
     // function name -> list of arms (pattern + body) ordered by specificity
     funcs: HashMap<String, Vec<FuncEntry>>,
+    max_call_depth: usize,
+    root_span: Option<Span>,
 }
+
+pub const DEFAULT_MAX_CALL_DEPTH: usize = 1000;
 
 #[derive(Debug)]
 struct FuncEntry {
@@ -29,9 +33,20 @@ impl Default for Env {
 
 impl Env {
     pub fn new() -> Self {
+        let limit = std::env::var("ABACUS_MAX_CALL_DEPTH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(DEFAULT_MAX_CALL_DEPTH);
+        Self::with_limit(limit)
+    }
+
+    pub fn with_limit(max_call_depth: usize) -> Self {
         Self {
             scopes: vec![HashMap::new()],
             funcs: HashMap::new(),
+            max_call_depth: max_call_depth.max(1),
+            root_span: None,
         }
     }
 
@@ -94,7 +109,12 @@ impl Env {
                 }
                 Ok(None)
             }
-            Stmt::Expression(e) => self.eval_expr(e).map(Some),
+            Stmt::Expression(e) => {
+                self.root_span = Some(e.span());
+                let res = self.eval_expr(e).map(Some);
+                self.root_span = None;
+                res
+            }
         }
     }
 
@@ -149,6 +169,14 @@ impl Env {
                         continue;
                     }
                     if let Some(bindings) = match_and_bind(&arm.params, &argv, *span)? {
+                        if self.scopes.len() >= self.max_call_depth {
+                            let label_span = self.root_span.unwrap_or(*span);
+                            return Err(EvalError::recursion_limit(
+                                fname.clone(),
+                                self.max_call_depth,
+                                label_span,
+                            ));
+                        }
                         self.push_frame(bindings);
                         let out = self.eval_expr(&arm.body);
                         self.pop_frame();
@@ -353,6 +381,43 @@ mod tests {
         },
     };
     use miette::SourceSpan;
+    use std::{
+        env,
+        sync::{Mutex, MutexGuard},
+    };
+
+    fn env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().expect("env mutex poisoned")
+    }
+
+    struct EnvVarGuard {
+        _lock: MutexGuard<'static, ()>,
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let lock = env_lock();
+            let original = env::var(key).ok();
+            unsafe { env::set_var(key, value) };
+            Self {
+                _lock: lock,
+                key,
+                original,
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => unsafe { env::set_var(self.key, v) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
 
     fn dummy_span() -> Span {
         Span::new(0, 0)
@@ -724,6 +789,32 @@ mod tests {
             } => {
                 assert_eq!(message, "operands must be comparable");
                 assert_source_span(span, 0, 7);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recursion_limit_reports_span_and_name() {
+        let _guard = EnvVarGuard::set("ABACUS_MAX_CALL_DEPTH", "8");
+        let mut env = Env::new();
+        let def = parse_stmt_with_spans("inf(n)=inf(n)");
+        env.eval_stmt(&def).expect("function defines");
+
+        let err = eval_expr_stmt(&mut env, parse_expr_with_spans("inf(10)"))
+            .expect_err("expected recursion limit");
+        match err {
+            EvalError::RecursionLimit {
+                name,
+                limit,
+                span: Some(span),
+                ..
+            } => {
+                assert_eq!(name, "inf");
+                assert_eq!(limit, 8);
+                let offset: usize = span.offset();
+                assert_eq!(offset, 0, "span should point to call site");
+                assert_eq!(span.len(), 7);
             }
             other => panic!("unexpected error: {other:?}"),
         }

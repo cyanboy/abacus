@@ -38,6 +38,14 @@ pub enum EvalError {
         #[label("division by zero")]
         span: Option<SourceSpan>,
     },
+
+    #[error("recursion limit ({limit}) exceeded in {name}")]
+    RecursionLimit {
+        name: String,
+        limit: usize,
+        #[label("too many recursive calls")]
+        span: Option<SourceSpan>,
+    },
 }
 
 impl EvalError {
@@ -75,6 +83,14 @@ impl EvalError {
         }
     }
 
+    pub fn recursion_limit(name: String, limit: usize, span: Span) -> Self {
+        Self::RecursionLimit {
+            name,
+            limit,
+            span: Some(span.into_source_span()),
+        }
+    }
+
     pub fn with_span(self, span: Span) -> Self {
         let span = Some(span.into_source_span());
         match self {
@@ -83,6 +99,9 @@ impl EvalError {
             EvalError::NoMatchingArm { name, .. } => EvalError::NoMatchingArm { name, span },
             EvalError::TypeError { message, .. } => EvalError::TypeError { message, span },
             EvalError::DivideByZero { .. } => EvalError::DivideByZero { span },
+            EvalError::RecursionLimit { name, limit, .. } => {
+                EvalError::RecursionLimit { name, limit, span }
+            }
         }
     }
 }
