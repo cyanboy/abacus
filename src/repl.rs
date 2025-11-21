@@ -3,7 +3,6 @@ use std::{
     io::{self, Write},
 };
 
-use colored::Colorize;
 use miette::{GraphicalReportHandler, Report};
 use rustyline::{
     Editor,
@@ -23,6 +22,7 @@ use crate::{
         token::{Token, TokenKind},
     },
     ui::colors::{FUNCTION_CYAN, LITERAL_YELLOW, OPERATOR_BLUE, VALUE_OUTPUT},
+    ui::style::colorize,
 };
 
 #[derive(Clone, Copy)]
@@ -80,7 +80,7 @@ impl Highlighter for ReplHelper {
             let segment = &line[span.start..span.end];
             match highlight_color(&tokens, idx) {
                 Some(color) => {
-                    highlighted.push_str(&segment.color(color).to_string());
+                    highlighted.push_str(&colorize(segment, color, self.color_enabled));
                     colored = true;
                 }
                 None => highlighted.push_str(segment),
@@ -119,10 +119,7 @@ pub fn create_editor(color_enabled: bool) -> rustyline::Result<ReplEditor> {
 }
 
 pub fn format_value(value: &Value, color_enabled: bool) -> String {
-    if !color_enabled {
-        return value.to_string();
-    }
-    value.to_string().color(VALUE_OUTPUT).to_string()
+    colorize(&value.to_string(), VALUE_OUTPUT, color_enabled)
 }
 
 pub fn print_report<W: Write>(
@@ -225,14 +222,9 @@ fn is_function_name<'a>(tokens: &[Token<'a>], index: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colored::{Colorize, control};
+    use crate::ui::style::colorize;
     use rustyline::highlight::CmdKind;
-    use std::{borrow::Cow, sync::Once};
-
-    fn ensure_color_override() {
-        static FORCE: Once = Once::new();
-        FORCE.call_once(|| control::set_override(true));
-    }
+    use std::borrow::Cow;
 
     #[test]
     fn highlight_without_color_passes_through() {
@@ -245,15 +237,14 @@ mod tests {
 
     #[test]
     fn highlight_with_color_marks_tokens() {
-        ensure_color_override();
         let helper = ReplHelper::new(true);
         let highlighted = helper.highlight("foo(1 + 2)", 0).into_owned();
-        let expected_fn = format!("{}", "foo".color(FUNCTION_CYAN));
+        let expected_fn = colorize("foo", FUNCTION_CYAN, true);
         assert!(
             highlighted.contains(&expected_fn),
             "function name should be highlighted: {highlighted:?}"
         );
-        let expected_op = format!("{}", "+".color(OPERATOR_BLUE));
+        let expected_op = colorize("+", OPERATOR_BLUE, true);
         assert!(
             highlighted.contains(&expected_op),
             "operator should be highlighted: {highlighted:?}"
@@ -262,12 +253,11 @@ mod tests {
 
     #[test]
     fn format_value_adds_style_when_colored() {
-        ensure_color_override();
         let value = Value::Int(8);
         assert_eq!(format_value(&value, false), "8");
-        let colored = format_value(&value, true);
-        let expected = format!("{}", "8".color(VALUE_OUTPUT));
-        assert_eq!(colored, expected);
+        let colored_value = format_value(&value, true);
+        let expected = colorize("8", VALUE_OUTPUT, true);
+        assert_eq!(colored_value, expected);
     }
 
     #[test]
@@ -287,7 +277,6 @@ mod tests {
 
     #[test]
     fn print_report_with_color_and_no_labels_falls_back() {
-        ensure_color_override();
         let mut out = Vec::new();
         let report = Report::msg("boom");
         print_report(&mut out, "a + b", report, true).expect("print_report");
