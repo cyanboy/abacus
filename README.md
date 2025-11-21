@@ -51,6 +51,7 @@ Options:
 - Disable ANSI colors for scripts or terminals that do not support them: add `--no-color` (e.g. `abc --no-color -e "1/3"`)
 - Color is also controlled by common environment variables: `NO_COLOR` disables color, `CLICOLOR_FORCE=1` forces it, and `CLICOLOR=0` disables it unless forced. Color is off when stdout is not a TTY unless forced.
 - Equality is type-strict: ints and floats cross-compare, but comparing booleans to numbers raises a type error instead of silently returning `false`.
+- Function calls have a recursion safeguard (default limit 1000, configurable via `--recursion-limit` or `ABACUS_MAX_CALL_DEPTH`); unbounded recursion (e.g., `inf(n) = n * inf(n)`) will eventually raise a recursion-limit diagnostic instead of looping forever.
 
 REPL sessions retain history, coloring, and diagnostic output between entries:
 

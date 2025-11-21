@@ -128,25 +128,43 @@ pub fn print_report<W: Write>(
     report: Report,
     color_enabled: bool,
 ) -> io::Result<()> {
-    if !color_enabled {
-        return render_fallback(writer, source, &report);
-    }
     let has_labels = report
         .labels()
         .map(|labels| labels.count() > 0)
         .unwrap_or(false);
+
+    if !has_labels {
+        writeln!(writer, "{report}")?;
+        return Ok(());
+    }
+
+    if !color_enabled {
+        let mut rendered = String::new();
+        let handler = GraphicalReportHandler::new().without_cause_chain();
+        if handler
+            .render_report(&mut rendered, report.as_ref())
+            .is_ok()
+            && !rendered.trim().is_empty()
+        {
+            write!(writer, "{rendered}")?;
+            if !rendered.ends_with('\n') {
+                writeln!(writer)?;
+            }
+            return Ok(());
+        }
+        writeln!(writer, "{report}")?;
+        render_fallback(writer, source, &report)?;
+        return Ok(());
+    }
 
     let handler = GraphicalReportHandler::new().without_cause_chain();
     let mut rendered = String::new();
     if handler
         .render_report(&mut rendered, report.as_ref())
         .is_err()
+        || rendered.trim().is_empty()
     {
-        render_fallback(writer, source, &report)?;
-        return Ok(());
-    }
-
-    if rendered.trim().is_empty() || !has_labels {
+        writeln!(writer, "{report}")?;
         render_fallback(writer, source, &report)?;
         return Ok(());
     }
@@ -281,8 +299,10 @@ mod tests {
         let report = Report::msg("boom");
         print_report(&mut out, "a + b", report, true).expect("print_report");
         let rendered = String::from_utf8(out).expect("utf8");
-        assert!(rendered.contains("a + b"));
-        assert!(rendered.contains("^"));
+        assert!(
+            rendered.contains("boom"),
+            "message should be printed: {rendered:?}"
+        );
     }
 
     #[test]
@@ -299,7 +319,9 @@ mod tests {
         let report = Report::msg("boom");
         print_report(&mut out, "a + b", report, false).expect("print_report");
         let rendered = String::from_utf8(out).expect("utf8");
-        assert!(rendered.contains("a + b"));
-        assert!(rendered.contains("^"));
+        assert!(
+            rendered.contains("boom"),
+            "message should be printed: {rendered:?}"
+        );
     }
 }

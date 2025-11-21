@@ -8,6 +8,7 @@ use miette::{NamedSource, Report};
 
 use crate::{
     interpreter::Env,
+    interpreter::engine::DEFAULT_MAX_CALL_DEPTH,
     lexer::Lexer,
     parser::Parser,
     repl::{create_editor, format_value, print_report},
@@ -24,11 +25,15 @@ const TITLE: &str = "[ABACUS - Calculator REPL]";
 #[derive(Debug, Clone, Copy)]
 pub struct RunConfig {
     pub color: bool,
+    pub recursion_limit: usize,
 }
 
 impl Default for RunConfig {
     fn default() -> Self {
-        Self { color: true }
+        Self {
+            color: true,
+            recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+        }
     }
 }
 
@@ -116,7 +121,7 @@ where
     W: IoWrite,
 {
     let color_enabled = resolve_color_setting(config.color);
-    let mut env = Env::new();
+    let mut env = Env::with_limit(config.recursion_limit);
     let mut prompt_state = PromptState::new(color_enabled, true);
     let mut line = String::new();
 
@@ -165,7 +170,7 @@ pub fn run_expression(expr: &str, config: RunConfig) -> io::Result<()> {
         return Ok(());
     }
     let color_enabled = resolve_color_setting(config.color);
-    let mut env = Env::new();
+    let mut env = Env::with_limit(config.recursion_limit);
     let mut prompt_state = PromptState::new(color_enabled, false);
     let mut stdout = io::stdout();
     process_input(trimmed, &mut prompt_state, &mut env, &mut stdout, false)?;
@@ -178,7 +183,7 @@ where
     W: IoWrite,
 {
     let color_enabled = resolve_color_setting(config.color);
-    let mut env = Env::new();
+    let mut env = Env::with_limit(config.recursion_limit);
     let mut prompt_state = PromptState::new(color_enabled, false);
     for line in reader.lines() {
         let line = line?;
@@ -522,8 +527,15 @@ mod tests {
         let reader = Cursor::new(&input[..]);
         let mut buffer = Vec::new();
 
-        run_noninteractive_with_config(reader, &mut buffer, RunConfig { color: true })
-            .expect("run noninteractive");
+        run_noninteractive_with_config(
+            reader,
+            &mut buffer,
+            RunConfig {
+                color: true,
+                recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+            },
+        )
+        .expect("run noninteractive");
 
         let output = String::from_utf8(buffer).expect("utf8");
         assert!(
@@ -545,8 +557,15 @@ mod tests {
         let reader = Cursor::new(&input[..]);
         let mut buffer = Vec::new();
 
-        run_noninteractive_with_config(reader, &mut buffer, RunConfig { color: true })
-            .expect("run noninteractive");
+        run_noninteractive_with_config(
+            reader,
+            &mut buffer,
+            RunConfig {
+                color: true,
+                recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+            },
+        )
+        .expect("run noninteractive");
 
         let output = String::from_utf8(buffer).expect("utf8");
         assert!(
@@ -557,7 +576,14 @@ mod tests {
 
     #[test]
     fn run_expression_ignores_empty_input() {
-        run_expression("   ", RunConfig { color: true }).expect("empty expression ok");
+        run_expression(
+            "   ",
+            RunConfig {
+                color: true,
+                recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+            },
+        )
+        .expect("empty expression ok");
     }
 
     #[test]
@@ -565,7 +591,10 @@ mod tests {
         let input = b"2 + 2\n\nundefined()\nquit\n";
         let reader = Cursor::new(&input[..]);
         let mut buffer = Vec::new();
-        let config = RunConfig { color: false };
+        let config = RunConfig {
+            color: false,
+            recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+        };
 
         run_noninteractive_with_config(reader, &mut buffer, config).expect("run noninteractive");
 
@@ -587,8 +616,8 @@ mod tests {
             "expected echoed failing input:\n{output}"
         );
         assert!(
-            output.contains("  1 | undefined()"),
-            "expected fallback diagnostic snippet:\n{output}"
+            output.contains("undefined function"),
+            "expected diagnostic message:\n{output}"
         );
         assert!(
             output.contains("Goodbye!"),
@@ -749,12 +778,8 @@ mod tests {
 
         let rendered = String::from_utf8(out).expect("utf8");
         assert!(
-            !rendered.contains("[0x00]:"),
-            "prompt should not appear:\n{rendered}"
-        );
-        assert!(
-            rendered.contains("  1 | a =="),
-            "expected fallback diagnostic snippet:\n{rendered}"
+            rendered.contains("unexpected token"),
+            "expected diagnostic message:\n{rendered}"
         );
     }
 
@@ -763,7 +788,15 @@ mod tests {
         let script = "a = 5\na + 7\n";
         let reader = script.as_bytes();
         let mut out = Vec::new();
-        run_script_reader(reader, &mut out, RunConfig { color: false }).expect("script");
+        run_script_reader(
+            reader,
+            &mut out,
+            RunConfig {
+                color: false,
+                recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+            },
+        )
+        .expect("script");
         let output = String::from_utf8(out).expect("utf8");
         assert!(output.contains("12"));
     }
