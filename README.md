@@ -2,7 +2,6 @@
 
 ![build](https://github.com/cyanboy/abacus/actions/workflows/ci.yml/badge.svg)
 ![Crates.io Version](https://img.shields.io/crates/v/abacus)
-[![codecov](https://codecov.io/github/cyanboy/abacus/graph/badge.svg?token=44PG7UU1OP)](https://codecov.io/github/cyanboy/abacus)
 
 Abacus is a experimental, interpreted functional programming language with a pleasant REPL
 
