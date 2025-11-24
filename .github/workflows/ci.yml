@@ -19,5 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: cargo build --verbose
+      - name: Lint
+        run: |
+          rustup component add clippy
+          cargo clippy --all-targets --all-features -- -D warnings
       - name: Run tests
         run: cargo test --verbose
