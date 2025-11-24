@@ -52,8 +52,8 @@ impl Env {
 
     fn get_var(&self, name: &str) -> Option<Value> {
         for frame in self.scopes.iter().rev() {
-            if let Some(v) = frame.get(name) {
-                return Some(v.clone());
+            if let Some(&v) = frame.get(name) {
+                return Some(v);
             }
         }
         None
@@ -153,38 +153,45 @@ impl Env {
                     }
                 };
 
-                let arms: Vec<Rc<FuncArm>> = match self.funcs.get(&fname) {
-                    Some(entries) => entries.iter().map(|entry| Rc::clone(&entry.arm)).collect(),
+                let mut argv = Vec::with_capacity(args.len());
+                for a in args {
+                    argv.push(self.eval_expr(a)?);
+                }
+
+                let entries = match self.funcs.get(&fname) {
+                    Some(entries) => entries,
                     None => return Err(EvalError::undefined_func(fname.clone(), fname_span)),
                 };
 
-                let argv: Vec<Value> = args
-                    .iter()
-                    .map(|a| self.eval_expr(a))
-                    .collect::<Result<_, _>>()?;
-
-                for arm in &arms {
-                    let arm = arm.as_ref();
+                let mut selected: Option<(Rc<FuncArm>, HashMap<String, Value>)> = None;
+                for entry in entries {
+                    let arm = entry.arm.as_ref();
                     if arm.params.len() != argv.len() {
                         continue;
                     }
                     if let Some(bindings) = match_and_bind(&arm.params, &argv, *span)? {
-                        if self.scopes.len() >= self.max_call_depth {
-                            let label_span = self.root_span.unwrap_or(*span);
-                            return Err(EvalError::recursion_limit(
-                                fname.clone(),
-                                self.max_call_depth,
-                                label_span,
-                            ));
-                        }
-                        self.push_frame(bindings);
-                        let out = self.eval_expr(&arm.body);
-                        self.pop_frame();
-                        return out;
+                        selected = Some((Rc::clone(&entry.arm), bindings));
+                        break;
                     }
                 }
 
-                Err(EvalError::no_matching_arm(fname, *span))
+                let Some((arm, bindings)) = selected else {
+                    return Err(EvalError::no_matching_arm(fname.clone(), *span));
+                };
+
+                if self.scopes.len() >= self.max_call_depth {
+                    let label_span = self.root_span.unwrap_or(*span);
+                    return Err(EvalError::recursion_limit(
+                        fname,
+                        self.max_call_depth,
+                        label_span,
+                    ));
+                }
+
+                self.push_frame(bindings);
+                let out = self.eval_expr(&arm.body);
+                self.pop_frame();
+                out
             }
         }
     }
@@ -332,7 +339,7 @@ fn match_and_bind(
     args: &[Value],
     _span: Span,
 ) -> Result<Option<HashMap<String, Value>>, EvalError> {
-    let mut bindings = HashMap::new();
+    let mut bindings = HashMap::with_capacity(params.len());
     for (p, a) in params.iter().zip(args) {
         match p {
             Pattern::Identifier(name) => {
@@ -342,7 +349,7 @@ fn match_and_bind(
                         Ok(false) | Err(_) => return Ok(None),
                     }
                 } else {
-                    bindings.insert(name.clone(), a.clone());
+                    bindings.insert(name.clone(), *a);
                 }
             }
             Pattern::Lit(Literal::Int(n)) => match val_eq(a, &Value::Int(*n)) {
