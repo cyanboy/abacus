@@ -2,9 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use abacus::{
-    RunConfig, interpreter::DEFAULT_MAX_CALL_DEPTH, run_expression, run_file, run_with_config,
-};
+use abacus::{RunConfig, run_expression, run_file, run_with_config};
 use std::process;
 
 #[derive(Parser, Debug)]
