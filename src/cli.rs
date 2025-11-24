@@ -19,6 +19,7 @@ use crate::{
     },
     ui::style::{colorize_bold, colorize_dim},
 };
+use std::env;
 
 const TITLE: &str = "[ABACUS - Calculator REPL]";
 
@@ -30,9 +31,14 @@ pub struct RunConfig {
 
 impl Default for RunConfig {
     fn default() -> Self {
+        let recursion_limit = env::var("ABACUS_MAX_CALL_DEPTH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(DEFAULT_MAX_CALL_DEPTH);
         Self {
             color: true,
-            recursion_limit: DEFAULT_MAX_CALL_DEPTH,
+            recursion_limit,
         }
     }
 }

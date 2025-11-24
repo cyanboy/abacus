@@ -30,12 +30,8 @@ struct Cli {
     no_color: bool,
 
     /// Maximum recursion depth before aborting evaluation
-    #[arg(
-        long = "recursion-limit",
-        value_name = "DEPTH",
-        default_value_t = DEFAULT_MAX_CALL_DEPTH
-    )]
-    recursion_limit: usize,
+    #[arg(long = "recursion-limit", value_name = "DEPTH")]
+    recursion_limit: Option<usize>,
 
     /// Execute the given Abacus source file
     #[arg(value_name = "FILE", conflicts_with = "expr")]
@@ -49,7 +45,9 @@ fn main() {
 fn run_cli(cli: Cli) -> i32 {
     let config = RunConfig {
         color: !cli.no_color,
-        recursion_limit: cli.recursion_limit,
+        recursion_limit: cli
+            .recursion_limit
+            .unwrap_or_else(|| RunConfig::default().recursion_limit),
     };
 
     if let Some(expr) = cli.expr {
