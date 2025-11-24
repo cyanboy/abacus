@@ -510,6 +510,7 @@ mod tests {
 
     #[test]
     fn resolve_color_setting_honors_preference() {
+        let _env = env_lock();
         let _guard = EnvGuard::set(&[
             ("NO_COLOR", None),
             ("CLICOLOR_FORCE", None),
