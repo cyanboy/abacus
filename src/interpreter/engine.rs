@@ -390,6 +390,7 @@ mod tests {
     use miette::SourceSpan;
     use std::{
         env,
+        f64::consts::PI,
         sync::{Mutex, MutexGuard},
     };
 
@@ -511,7 +512,7 @@ mod tests {
                 body: lit_int(1),
             },
             FuncArm {
-                params: vec![Pattern::Lit(Literal::Float(3.14))],
+                params: vec![Pattern::Lit(Literal::Float(PI))],
                 body: lit_int(2),
             },
         ];
@@ -529,7 +530,7 @@ mod tests {
 
         let result_float = expect_value(
             &mut env,
-            call("check", vec![Expr::Lit(Literal::Float(3.14), dummy_span())]),
+            call("check", vec![Expr::Lit(Literal::Float(PI), dummy_span())]),
         );
         assert_eq!(result_float, Value::Int(2));
 
