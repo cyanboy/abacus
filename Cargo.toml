@@ -13,11 +13,6 @@ categories = ["command-line-utilities", "compilers"]
 default-run = "abc"
 rust-version = "1.90"
 
-[package.metadata.release]
-sign-commit = true
-sign-tag = true
-tag-prefix = "v"
-
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
 miette = { version = "7.6.0", features = ["fancy", "derive"] }
