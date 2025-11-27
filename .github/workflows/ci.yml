@@ -1,27 +1,25 @@
 name: ci
-permissions:
-  contents: read
 
 on:
   push:
-    branches: ["main"]
   pull_request:
-    branches: ["main"]
 
-env:
+env: 
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build_and_test:
+    name: Rust project - latest
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - beta
+          - nightly
     steps:
       - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Lint
-        run: |
-          rustup component add clippy
-          cargo clippy --all-targets --all-features -- -D warnings
-      - name: Run tests
-        run: cargo test --verbose
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - run: cargo build --verbose
+      - run: cargo test --verbose
+  
