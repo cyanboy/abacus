@@ -39,10 +39,12 @@ Arguments:
   [FILE]  Execute the given Abacus source file
 
 Options:
-  -e, --expr <EXPR>  Evaluate a single expression and exit
-  -n, --no-color     Disable ANSI color output
-  -h, --help         Print help
-  -V, --version      Print version
+  -e, --expr <EXPR>           Evaluate a single expression and exit
+      --no-color              Disable ANSI color output
+      --recursion-limit <N>   Maximum recursion depth (default: 1000)
+      --completions <SHELL>   Generate shell completions [bash, zsh, fish, powershell]
+  -h, --help                  Print help
+  -V, --version               Print version
 ```
 
 - Start the interactive REPL: `abc`
@@ -74,6 +76,24 @@ REPL sessions retain history, coloring, and diagnostic output between entries:
 
 ```bash
 cargo build
+```
+
+## Shell Completions
+
+Generate shell completions for your shell:
+
+```bash
+# Bash
+abc --completions bash > ~/.local/share/bash-completion/completions/abc
+
+# Zsh
+abc --completions zsh > ~/.zfunc/_abc
+
+# Fish
+abc --completions fish > ~/.config/fish/completions/abc.fish
+
+# PowerShell
+abc --completions powershell > abc.ps1
 ```
 
 ## Limitations

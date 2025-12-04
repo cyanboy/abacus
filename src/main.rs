@@ -1,9 +1,11 @@
+use std::io;
 use std::path::PathBuf;
+use std::process;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{Shell, generate};
 
 use abacus::{RunConfig, run_expression, run_file, run_with_config};
-use std::process;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -31,6 +33,10 @@ struct Cli {
     #[arg(long = "recursion-limit", value_name = "DEPTH")]
     recursion_limit: Option<usize>,
 
+    /// Generate shell completions and exit
+    #[arg(long = "completions", value_name = "SHELL")]
+    completions: Option<Shell>,
+
     /// Execute the given Abacus source file
     #[arg(value_name = "FILE", conflicts_with = "expr")]
     script: Option<PathBuf>,
@@ -41,6 +47,12 @@ fn main() {
 }
 
 fn run_cli(cli: Cli) -> i32 {
+    if let Some(shell) = cli.completions {
+        let mut cmd = Cli::command();
+        generate(shell, &mut cmd, "abc", &mut io::stdout());
+        return 0;
+    }
+
     let config = RunConfig {
         color: !cli.no_color,
         recursion_limit: cli
