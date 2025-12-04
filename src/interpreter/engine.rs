@@ -32,6 +32,11 @@ impl Default for Env {
 }
 
 impl Env {
+    /// Creates a new interpreter environment with default settings.
+    ///
+    /// The recursion limit is read from the `ABACUS_MAX_CALL_DEPTH` environment
+    /// variable, falling back to the default limit if not set or invalid.
+    #[must_use]
     pub fn new() -> Self {
         let limit = std::env::var("ABACUS_MAX_CALL_DEPTH")
             .ok()
@@ -41,6 +46,10 @@ impl Env {
         Self::with_limit(limit)
     }
 
+    /// Creates a new interpreter environment with a custom recursion limit.
+    ///
+    /// The limit is clamped to a minimum of 1.
+    #[must_use]
     pub fn with_limit(max_call_depth: usize) -> Self {
         Self {
             scopes: vec![HashMap::new()],
@@ -71,6 +80,16 @@ impl Env {
         self.scopes.pop();
     }
 
+    /// Evaluates a statement and returns the result.
+    ///
+    /// Returns `Ok(Some(value))` for expressions, `Ok(None)` for assignments
+    /// and function definitions, or an error if evaluation fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the statement contains undefined variables or
+    /// functions, type mismatches, division by zero, integer overflow, or
+    /// if the recursion limit is exceeded.
     pub fn eval_stmt(&mut self, s: &Stmt) -> Result<Option<Value>, EvalError> {
         match s {
             Stmt::Assignment { name, value } => {
@@ -80,7 +99,7 @@ impl Env {
             }
             Stmt::FunctionDefinition { name, arms } => {
                 let entry = self.funcs.entry(name.clone()).or_default();
-                for arm in arms.iter() {
+                for arm in arms {
                     let specificity = pattern_specificity(&arm.params);
                     let rc = Rc::new(arm.clone());
 
@@ -158,9 +177,8 @@ impl Env {
                     argv.push(self.eval_expr(a)?);
                 }
 
-                let entries = match self.funcs.get(&fname) {
-                    Some(entries) => entries,
-                    None => return Err(EvalError::undefined_func(fname.clone(), fname_span)),
+                let Some(entries) = self.funcs.get(&fname) else {
+                    return Err(EvalError::undefined_func(fname.clone(), fname_span));
                 };
 
                 let mut selected: Option<(Rc<FuncArm>, HashMap<String, Value>)> = None;
@@ -203,7 +221,7 @@ impl Env {
         lhs: &Expr,
         rhs: &Expr,
     ) -> Result<Value, EvalError> {
-        use Value::*;
+        use Value::{Bool, Float, Int};
 
         // short-circuiting boolean ops
         if *op == BinOp::And {
@@ -238,17 +256,23 @@ impl Env {
         let l = self.eval_expr(lhs)?;
         let r = self.eval_expr(rhs)?;
         Ok(match (op, l, r) {
-            (BinOp::Add, Int(a), Int(b)) => Int(a + b),
+            (BinOp::Add, Int(a), Int(b)) => {
+                Int(a.checked_add(b).ok_or_else(|| EvalError::overflow(span))?)
+            }
             (BinOp::Add, Float(a), Float(b)) => Float(a + b),
             (BinOp::Add, Int(a), Float(b)) => Float((a as f64) + b),
             (BinOp::Add, Float(a), Int(b)) => Float(a + (b as f64)),
 
-            (BinOp::Sub, Int(a), Int(b)) => Int(a - b),
+            (BinOp::Sub, Int(a), Int(b)) => {
+                Int(a.checked_sub(b).ok_or_else(|| EvalError::overflow(span))?)
+            }
             (BinOp::Sub, Float(a), Float(b)) => Float(a - b),
             (BinOp::Sub, Int(a), Float(b)) => Float((a as f64) - b),
             (BinOp::Sub, Float(a), Int(b)) => Float(a - (b as f64)),
 
-            (BinOp::Mul, Int(a), Int(b)) => Int(a * b),
+            (BinOp::Mul, Int(a), Int(b)) => {
+                Int(a.checked_mul(b).ok_or_else(|| EvalError::overflow(span))?)
+            }
             (BinOp::Mul, Float(a), Float(b)) => Float(a * b),
             (BinOp::Mul, Int(a), Float(b)) => Float((a as f64) * b),
             (BinOp::Mul, Float(a), Int(b)) => Float(a * (b as f64)),
@@ -260,22 +284,25 @@ impl Env {
                 Int(a / b)
             }
             (BinOp::Div, Float(a), Float(b)) => {
-                if b == 0.0 {
+                let result = a / b;
+                if !result.is_finite() {
                     return Err(EvalError::divide_by_zero(span));
                 }
-                Float(a / b)
+                Float(result)
             }
             (BinOp::Div, Int(a), Float(b)) => {
-                if b == 0.0 {
+                let result = (a as f64) / b;
+                if !result.is_finite() {
                     return Err(EvalError::divide_by_zero(span));
                 }
-                Float((a as f64) / b)
+                Float(result)
             }
             (BinOp::Div, Float(a), Int(b)) => {
-                if b == 0 {
+                let result = a / (b as f64);
+                if !result.is_finite() {
                     return Err(EvalError::divide_by_zero(span));
                 }
-                Float(a / (b as f64))
+                Float(result)
             }
 
             (BinOp::Mod, Int(a), Int(b)) => {
@@ -486,7 +513,7 @@ mod tests {
                     "expected float {expected}, got int {i}"
                 );
             }
-            other => panic!("expected numeric value, got {other:?}"),
+            other @ Value::Bool(_) => panic!("expected numeric value, got {other:?}"),
         }
     }
 

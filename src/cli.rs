@@ -13,9 +13,8 @@ use crate::{
     parser::Parser,
     repl::{create_editor, format_value, print_report},
     ui::colors::{
-        INSTRUCTION_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY, PROMPT_BRACKET_WARNING,
-        PROMPT_ERROR, PROMPT_READY, PROMPT_WARNING, TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE,
-        TITLE_RAINBOW,
+        INSTRUCTION_GREEN, PROMPT_BRACKET_ERROR, PROMPT_BRACKET_READY, PROMPT_ERROR, PROMPT_READY,
+        TITLE_ACCENT_BLUE, TITLE_BRACKET_WHITE, TITLE_RAINBOW,
     },
     ui::style::{colorize_bold, colorize_dim},
 };
@@ -43,10 +42,19 @@ impl Default for RunConfig {
     }
 }
 
+/// Starts the Abacus REPL with default configuration.
+///
+/// This is the main entry point for interactive use.
 pub fn run() {
     run_with_config(RunConfig::default());
 }
 
+/// Starts the Abacus REPL with the given configuration.
+///
+/// # Panics
+///
+/// Panics if the REPL editor fails to initialize or if running in test mode
+/// and the non-interactive REPL fails.
 pub fn run_with_config(config: RunConfig) {
     let color_enabled = resolve_color_setting(config.color);
     if color_enabled {
@@ -76,39 +84,39 @@ pub fn run_with_config(config: RunConfig) {
 
     loop {
         let prompt = prompt_state.prompt();
-        match rl.readline(&prompt) {
-            Ok(line) => {
-                let input = line.trim();
-                if input.is_empty() {
-                    println!();
-                    let _ = io::stdout().flush();
-                    continue;
-                }
-                if let Err(err) = rl.add_history_entry(input) {
-                    eprintln!("warning: failed to record history entry: {err}");
-                }
+        let Ok(line) = rl.readline(&prompt) else {
+            println!("Goodbye!");
+            break;
+        };
 
-                if input == "quit" || input == "exit" {
-                    println!("Goodbye!");
-                    break;
-                }
-
-                let mut stdout = io::stdout();
-                if let Err(err) =
-                    process_input(input, &mut prompt_state, &mut env, &mut stdout, false)
-                {
-                    eprintln!("I/O error while processing input: {err}");
-                }
-                prompt_state.advance();
-            }
-            Err(_) => {
-                println!("Goodbye!");
-                break;
-            }
+        let input = line.trim();
+        if input.is_empty() {
+            println!();
+            let _ = io::stdout().flush();
+            continue;
         }
+        if let Err(err) = rl.add_history_entry(input) {
+            eprintln!("warning: failed to record history entry: {err}");
+        }
+
+        if input == "quit" || input == "exit" {
+            println!("Goodbye!");
+            break;
+        }
+
+        let mut stdout = io::stdout();
+        if let Err(err) = process_input(input, &mut prompt_state, &mut env, &mut stdout, false) {
+            eprintln!("I/O error while processing input: {err}");
+        }
+        prompt_state.advance();
     }
 }
 
+/// Runs the REPL in non-interactive mode, reading from the given reader.
+///
+/// # Errors
+///
+/// Returns an error if reading from the input or writing to the output fails.
 pub fn run_noninteractive<R, W>(reader: R, out: &mut W) -> io::Result<()>
 where
     R: BufRead,
@@ -117,6 +125,11 @@ where
     run_noninteractive_with_config(reader, out, RunConfig::default())
 }
 
+/// Runs the REPL in non-interactive mode with the given configuration.
+///
+/// # Errors
+///
+/// Returns an error if reading from the input or writing to the output fails.
 pub fn run_noninteractive_with_config<R, W>(
     mut reader: R,
     out: &mut W,
@@ -163,6 +176,11 @@ where
     Ok(())
 }
 
+/// Executes an Abacus source file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read, or if writing output fails.
 pub fn run_file<P: AsRef<Path>>(path: P, config: RunConfig) -> io::Result<()> {
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
@@ -170,6 +188,11 @@ pub fn run_file<P: AsRef<Path>>(path: P, config: RunConfig) -> io::Result<()> {
     run_script_reader(reader, &mut stdout, config)
 }
 
+/// Evaluates a single expression and prints the result.
+///
+/// # Errors
+///
+/// Returns an error if writing output fails.
 pub fn run_expression(expr: &str, config: RunConfig) -> io::Result<()> {
     let trimmed = expr.trim();
     if trimmed.is_empty() {
@@ -391,11 +414,6 @@ impl PromptState {
         self.mode = PromptMode::Error;
     }
 
-    #[allow(dead_code)]
-    fn mark_warning(&mut self) {
-        self.mode = PromptMode::Warning;
-    }
-
     fn advance(&mut self) {
         self.line_number += 1;
     }
@@ -423,7 +441,6 @@ impl PromptState {
         match self.mode {
             PromptMode::Ready => (PROMPT_BRACKET_READY, PROMPT_READY),
             PromptMode::Error => (PROMPT_BRACKET_ERROR, PROMPT_ERROR),
-            PromptMode::Warning => (PROMPT_BRACKET_WARNING, PROMPT_WARNING),
         }
     }
 
@@ -459,13 +476,11 @@ impl PromptState {
 enum PromptMode {
     Ready,
     Error,
-    Warning,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::colors::PROMPT_WARNING;
     use crate::ui::style::colorize_bold;
     use std::{
         env,
@@ -710,18 +725,6 @@ mod tests {
                 "CLICOLOR=0 should disable color even on a TTY"
             );
         }
-    }
-
-    #[test]
-    fn prompt_state_applies_warning_color() {
-        let mut state = PromptState::new(true, true);
-        state.mark_warning();
-        let prompt = state.prompt();
-        let expected = colorize_bold("0x00", PROMPT_WARNING, true);
-        assert!(
-            prompt.contains(&expected),
-            "prompt should contain colored counter: {prompt:?}"
-        );
     }
 
     #[test]

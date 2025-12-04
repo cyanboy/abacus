@@ -6,10 +6,12 @@ pub struct TextStyle {
     pub dim: bool,
 }
 
+#[must_use]
 pub fn colorize(text: &str, color: Color, enabled: bool) -> String {
     paint(text, color, TextStyle::default(), enabled)
 }
 
+#[must_use]
 pub fn colorize_bold(text: &str, color: Color, enabled: bool) -> String {
     paint(
         text,
@@ -22,6 +24,7 @@ pub fn colorize_bold(text: &str, color: Color, enabled: bool) -> String {
     )
 }
 
+#[must_use]
 pub fn colorize_dim(text: &str, color: Color, enabled: bool) -> String {
     paint(
         text,
@@ -34,6 +37,7 @@ pub fn colorize_dim(text: &str, color: Color, enabled: bool) -> String {
     )
 }
 
+#[must_use]
 pub fn paint(text: &str, color: Color, style: TextStyle, enabled: bool) -> String {
     if !enabled {
         return text.to_string();

@@ -39,6 +39,12 @@ pub enum EvalError {
         span: Option<SourceSpan>,
     },
 
+    #[error("integer overflow")]
+    Overflow {
+        #[label("overflow")]
+        span: Option<SourceSpan>,
+    },
+
     #[error("recursion limit ({limit}) exceeded in {name}")]
     RecursionLimit {
         name: String,
@@ -83,6 +89,12 @@ impl EvalError {
         }
     }
 
+    pub fn overflow(span: Span) -> Self {
+        Self::Overflow {
+            span: Some(span.into_source_span()),
+        }
+    }
+
     pub fn recursion_limit(name: String, limit: usize, span: Span) -> Self {
         Self::RecursionLimit {
             name,
@@ -99,6 +111,7 @@ impl EvalError {
             EvalError::NoMatchingArm { name, .. } => EvalError::NoMatchingArm { name, span },
             EvalError::TypeError { message, .. } => EvalError::TypeError { message, span },
             EvalError::DivideByZero { .. } => EvalError::DivideByZero { span },
+            EvalError::Overflow { .. } => EvalError::Overflow { span },
             EvalError::RecursionLimit { name, limit, .. } => {
                 EvalError::RecursionLimit { name, limit, span }
             }

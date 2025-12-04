@@ -698,7 +698,7 @@ mod tests {
                 assert_eq!(found, "end of input");
                 assert!(span.is_none(), "span should be None for empty input");
             }
-            other => panic!("unexpected error: {other:?}"),
+            other @ ParseError::LexerError { .. } => panic!("unexpected error: {other:?}"),
         }
     }
 

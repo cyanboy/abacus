@@ -29,7 +29,7 @@ fn cli_runs_in_test_mode_with_piped_input() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("5"),
+        stdout.contains('5'),
         "stdout should include evaluation result: {stdout}"
     );
     assert!(
@@ -53,7 +53,7 @@ fn cli_expr_flag_evaluates_expression() {
         output.status
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("5"), "stdout missing result: {stdout}");
+    assert!(stdout.contains('5'), "stdout missing result: {stdout}");
 }
 
 #[test]
@@ -76,5 +76,5 @@ fn cli_script_flag_executes_file() {
         output.status
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("8"), "stdout missing evaluation: {stdout}");
+    assert!(stdout.contains('8'), "stdout missing evaluation: {stdout}");
 }

@@ -105,7 +105,7 @@ mod tests {
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("2"),
+            stdout.contains('2'),
             "stdout should contain result, got: {stdout}"
         );
     }
@@ -131,7 +131,7 @@ mod tests {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("5"),
+            stdout.contains('5'),
             "stdout should contain evaluation result, got: {stdout}"
         );
     }

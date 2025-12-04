@@ -251,14 +251,14 @@ mod tests {
     use super::*;
 
     /// Assert that a single token is produced for `input`.
-    fn assert_token(input: &str, expected: TokenKind) {
+    fn assert_token(input: &str, expected: &TokenKind) {
         let mut lexer = Lexer::new(input);
         let spanned = lexer.next().unwrap().unwrap();
-        assert_eq!(spanned.kind, expected);
+        assert_eq!(&spanned.kind, expected);
     }
 
     /// Collect all tokens and compare.
-    fn assert_tokens(input: &str, expected: Vec<TokenKind>) {
+    fn assert_tokens(input: &str, expected: &[TokenKind]) {
         let lexer = Lexer::new(input);
         let result: Result<Vec<_>, _> = lexer.map(|t| t.map(|sp| sp.kind)).collect();
         assert_eq!(result.unwrap(), expected);
@@ -285,7 +285,7 @@ mod tests {
             (",", Comma),
         ];
 
-        for (input, expected) in cases {
+        for (input, expected) in &cases {
             assert_token(input, expected);
         }
     }
@@ -302,7 +302,7 @@ mod tests {
             ("||", Or),
         ];
 
-        for (input, expected) in cases {
+        for (input, expected) in &cases {
             assert_token(input, expected);
         }
     }
@@ -318,7 +318,7 @@ mod tests {
             ("x123", Identifier("x123")),
         ];
 
-        for (input, expected) in cases {
+        for (input, expected) in &cases {
             assert_token(input, expected);
         }
     }
@@ -332,7 +332,7 @@ mod tests {
             ("123", Integer(123)),
         ];
 
-        for (input, expected) in cases {
+        for (input, expected) in &cases {
             assert_token(input, expected);
         }
     }
@@ -347,29 +347,29 @@ mod tests {
             ("1.2e-3", Float(1.2e-3)),
         ];
 
-        for (input, expected) in cases {
+        for (input, expected) in &cases {
             assert_token(input, expected);
         }
     }
 
     #[test]
     fn test_booleans() {
-        assert_token("true", Bool(true));
-        assert_token("false", Bool(false));
+        assert_token("true", &Bool(true));
+        assert_token("false", &Bool(false));
     }
 
     #[test]
     fn test_keywords_as_prefix() {
         // Ensure keywords only match whole token
-        assert_token("trueish", Identifier("trueish"));
-        assert_token("falsehood", Identifier("falsehood"));
+        assert_token("trueish", &Identifier("trueish"));
+        assert_token("falsehood", &Identifier("falsehood"));
     }
 
     #[test]
     fn test_simple_expression() {
         assert_tokens(
             "x+1+1.2e10-42",
-            vec![
+            &[
                 Identifier("x"),
                 Plus,
                 Integer(1),
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_whitespace() {
-        assert_tokens(" 2  +  2  ", vec![Integer(2), Plus, Integer(2)]);
+        assert_tokens(" 2  +  2  ", &[Integer(2), Plus, Integer(2)]);
     }
 
     #[test]
@@ -416,7 +416,9 @@ mod tests {
                 assert_eq!(start, 0);
                 assert_eq!(end, 3);
             }
-            other => panic!("unexpected error: {other:?}"),
+            other @ LexError::UnexpectedCharacter { .. } => {
+                panic!("unexpected error: {other:?}")
+            }
         }
     }
 }

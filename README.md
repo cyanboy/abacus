@@ -76,6 +76,10 @@ REPL sessions retain history, coloring, and diagnostic output between entries:
 cargo build
 ```
 
+## Limitations
+
+- Mixed integer and float arithmetic promotes integers to floats. Integers outside the range 2^53 may lose precision in the conversion.
+
 ## License
 
 This project is licensed under the [MIT License](./LICENSE.md).
