@@ -204,7 +204,9 @@ fn render_fallback<W: Write>(writer: &mut W, source: &str, report: &Report) -> i
 
 fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<colored::Color> {
     match tokens[index].kind {
-        TokenKind::Integer(_) | TokenKind::Float(_) | TokenKind::Bool(_) => Some(LITERAL_YELLOW),
+        TokenKind::Integer { .. } | TokenKind::Float(_) | TokenKind::Bool(_) => {
+            Some(LITERAL_YELLOW)
+        }
         TokenKind::Identifier(_) if is_function_name(tokens, index) => Some(FUNCTION_CYAN),
         TokenKind::Assign
         | TokenKind::Plus

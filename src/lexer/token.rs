@@ -5,7 +5,7 @@ use miette::SourceSpan;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind<'a> {
     Identifier(&'a str),
-    Integer(i64),
+    Integer { base: Base, val: i64 },
     Float(f64),
     Bool(bool),
     Assign,     // '='
@@ -29,6 +29,18 @@ pub enum TokenKind<'a> {
     Comma,      // ','
     OpenParen,  // '('
     CloseParen, // ')'
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Base {
+    /// Literal starts with 0b
+    Binary = 2,
+    /// Literal starts with 0o
+    Octal = 8,
+    /// Literal without prefix
+    Decimal = 10,
+    /// Literal starts with 0x
+    Hexadecimal = 12,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,10 +88,16 @@ impl<'a> Token<'a> {
 
 impl fmt::Display for TokenKind<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Base::*;
         use TokenKind::*;
         match self {
             Identifier(id) => write!(f, "{}", id),
-            Integer(num) => write!(f, "{}", num),
+            Integer { base, val } => match base {
+                Binary => write!(f, "{:#b}", val),
+                Octal => write!(f, "{:#o}", val),
+                Decimal => write!(f, "{}", val),
+                Hexadecimal => write!(f, "{:#x}", val),
+            },
             Float(num) => write!(f, "{}", num),
             Bool(val) => write!(f, "{}", val),
             Assign => write!(f, "="),
@@ -139,9 +157,16 @@ mod tests {
 
     #[test]
     fn token_kind_display_matches_source_lexeme() {
+        use Base::*;
         let cases = [
             (TokenKind::Identifier("foo"), "foo"),
-            (TokenKind::Integer(42), "42"),
+            (
+                TokenKind::Integer {
+                    base: Decimal,
+                    val: 42,
+                },
+                "42",
+            ),
             (TokenKind::Float(1.5), "1.5"),
             (TokenKind::Bool(true), "true"),
             (TokenKind::Assign, "="),

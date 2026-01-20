@@ -1,3 +1,5 @@
+#![allow(unused_assignments)] // False positive from miette Diagnostic derive (rust-lang/rust#147648)
+
 use thiserror::Error;
 
 use miette::{Diagnostic, SourceSpan};

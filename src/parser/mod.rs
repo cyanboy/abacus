@@ -199,7 +199,7 @@ impl<'a> Parser<'a> {
         match self.bump()? {
             Some(Token { kind, span }) => match kind {
                 TokenKind::Identifier(s) => Ok(Pattern::Identifier(s.to_string())),
-                TokenKind::Integer(n) => Ok(Pattern::Lit(Literal::Int(n))),
+                TokenKind::Integer { base: _, val } => Ok(Pattern::Lit(Literal::Int(val))),
                 TokenKind::Float(x) => Ok(Pattern::Lit(Literal::Float(x))),
                 TokenKind::Bool(b) => Ok(Pattern::Lit(Literal::Bool(b))),
                 other => Err(ParseError::unexpected(
@@ -314,9 +314,9 @@ impl<'a> Parser<'a> {
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.bump()? {
             Some(Token {
-                kind: TokenKind::Integer(n),
+                kind: TokenKind::Integer { base: _, val },
                 span,
-            }) => Ok(Expr::Lit(Literal::Int(n), span)),
+            }) => Ok(Expr::Lit(Literal::Int(val), span)),
             Some(Token {
                 kind: TokenKind::Float(x),
                 span,
