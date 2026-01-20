@@ -8,6 +8,9 @@ use token::{Span, Token, TokenKind, TokenKind::*};
 
 use crate::lexer::token::Base;
 
+/// Information about a numeric base: the base enum, its radix, and a digit validator.
+type BaseInfo = (Base, u32, fn(char) -> bool);
+
 /// Streaming, zero-allocation lexer over `&str`.
 /// Emits `Result<Token, LexError>` and implements `Iterator`.
 #[derive(Debug, Clone)]
@@ -130,10 +133,10 @@ impl<'a> Lexer<'a> {
     ) -> Result<(TokenKind<'a>, usize), LexError> {
         let mut end = start + first.len_utf8();
 
-        if first == '0' {
-            if let Some((base, radix, is_valid_digit)) = self.match_base_prefix(&mut end) {
-                return self.parse_based_integer(start, end, base, radix, is_valid_digit);
-            }
+        if first == '0'
+            && let Some((base, radix, is_valid_digit)) = self.match_base_prefix(&mut end)
+        {
+            return self.parse_based_integer(start, end, base, radix, is_valid_digit);
         }
 
         self.consume_digits_matching(&mut end, |c| c.is_ascii_digit());
@@ -168,10 +171,10 @@ impl<'a> Lexer<'a> {
     }
 
     /// Consumes and returns base info if next char is `b`, `o`, or `x`.
-    fn match_base_prefix(&mut self, end: &mut usize) -> Option<(Base, u32, fn(char) -> bool)> {
+    fn match_base_prefix(&mut self, end: &mut usize) -> Option<BaseInfo> {
         let &(idx, c) = self.chars.peek()?;
 
-        let (base, radix, is_valid_digit): (Base, u32, fn(char) -> bool) = match c {
+        let (base, radix, is_valid_digit): BaseInfo = match c {
             'b' | 'B' => (Base::Binary, 2, |c| matches!(c, '0' | '1')),
             'o' | 'O' => (Base::Octal, 8, |c| matches!(c, '0'..='7')),
             'x' | 'X' => (Base::Hexadecimal, 16, |c| c.is_ascii_hexdigit()),
