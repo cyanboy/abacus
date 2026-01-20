@@ -6,6 +6,8 @@ pub mod token;
 use error::LexError;
 use token::{Span, Token, TokenKind, TokenKind::*};
 
+use crate::lexer::token::Base;
+
 /// Streaming, zero-allocation lexer over `&str`.
 /// Emits `Result<Token, LexError>` and implements `Iterator`.
 #[derive(Debug, Clone)]
@@ -152,7 +154,10 @@ impl<'a> Lexer<'a> {
         } else {
             slice
                 .parse()
-                .map(Integer)
+                .map(|n| Integer {
+                    base: Base::Decimal,
+                    val: n,
+                })
                 .map_err(|_| LexError::InvalidNumber { start, end })
         }?;
 
@@ -325,11 +330,36 @@ mod tests {
 
     #[test]
     fn test_integers() {
+        use token::Base::*;
         let cases = [
-            ("0", Integer(0)),
-            ("1", Integer(1)),
-            ("42", Integer(42)),
-            ("123", Integer(123)),
+            (
+                "0",
+                Integer {
+                    base: Decimal,
+                    val: 0,
+                },
+            ),
+            (
+                "1",
+                Integer {
+                    base: Decimal,
+                    val: 1,
+                },
+            ),
+            (
+                "42",
+                Integer {
+                    base: Decimal,
+                    val: 42,
+                },
+            ),
+            (
+                "123",
+                Integer {
+                    base: Decimal,
+                    val: 123,
+                },
+            ),
         ];
 
         for (input, expected) in &cases {
@@ -367,23 +397,44 @@ mod tests {
 
     #[test]
     fn test_simple_expression() {
+        use token::Base::*;
         assert_tokens(
             "x+1+1.2e10-42",
             &[
                 Identifier("x"),
                 Plus,
-                Integer(1),
+                Integer {
+                    base: Decimal,
+                    val: 1,
+                },
                 Plus,
                 Float(1.2e10),
                 Minus,
-                Integer(42),
+                Integer {
+                    base: Decimal,
+                    val: 42,
+                },
             ],
         );
     }
 
     #[test]
     fn test_whitespace() {
-        assert_tokens(" 2  +  2  ", &[Integer(2), Plus, Integer(2)]);
+        use token::Base::*;
+        assert_tokens(
+            " 2  +  2  ",
+            &[
+                Integer {
+                    base: Decimal,
+                    val: 2,
+                },
+                Plus,
+                Integer {
+                    base: Decimal,
+                    val: 2,
+                },
+            ],
+        );
     }
 
     #[test]
