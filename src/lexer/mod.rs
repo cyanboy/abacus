@@ -122,31 +122,34 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    /// Lex a numeric literal starting at `(start, first)`.
-    /// Supports:
-    /// - integers: `123`
-    /// - floats: `1.`, `.1` is not accepted here, `1.2`, `1.2e-3`, `1e10`
-    ///   Returns `Literal(Integer(_))` or `Literal(Float(_))`.
+    /// Lex a numeric literal: decimal, binary (`0b`), octal (`0o`), hex (`0x`), or float.
     fn numeric_literal(
         &mut self,
         start: usize,
         first: char,
     ) -> Result<(TokenKind<'a>, usize), LexError> {
         let mut end = start + first.len_utf8();
-        let mut is_decimal = false;
 
-        self.consume_digits(&mut end);
+        if first == '0' {
+            if let Some((base, radix, is_valid_digit)) = self.match_base_prefix(&mut end) {
+                return self.parse_based_integer(start, end, base, radix, is_valid_digit);
+            }
+        }
+
+        self.consume_digits_matching(&mut end, |c| c.is_ascii_digit());
+
+        let mut is_float = false;
 
         if self.consume_fraction(&mut end) {
-            is_decimal = true;
+            is_float = true;
         }
 
         if self.consume_exponent(start, &mut end)? {
-            is_decimal = true;
+            is_float = true;
         }
 
         let slice = &self.s[start..end];
-        let token = if is_decimal {
+        let token = if is_float {
             slice
                 .parse()
                 .map(Float)
@@ -154,14 +157,53 @@ impl<'a> Lexer<'a> {
         } else {
             slice
                 .parse()
-                .map(|n| Integer {
+                .map(|val| Integer {
                     base: Base::Decimal,
-                    val: n,
+                    val,
                 })
                 .map_err(|_| LexError::InvalidNumber { start, end })
         }?;
 
         Ok((token, end))
+    }
+
+    /// Consumes and returns base info if next char is `b`, `o`, or `x`.
+    fn match_base_prefix(&mut self, end: &mut usize) -> Option<(Base, u32, fn(char) -> bool)> {
+        let &(idx, c) = self.chars.peek()?;
+
+        let (base, radix, is_valid_digit): (Base, u32, fn(char) -> bool) = match c {
+            'b' | 'B' => (Base::Binary, 2, |c| matches!(c, '0' | '1')),
+            'o' | 'O' => (Base::Octal, 8, |c| matches!(c, '0'..='7')),
+            'x' | 'X' => (Base::Hexadecimal, 16, |c| c.is_ascii_hexdigit()),
+            _ => return None,
+        };
+
+        self.chars.next();
+        *end = idx + c.len_utf8();
+
+        Some((base, radix, is_valid_digit))
+    }
+
+    fn parse_based_integer(
+        &mut self,
+        start: usize,
+        prefix_end: usize,
+        base: Base,
+        radix: u32,
+        is_valid_digit: fn(char) -> bool,
+    ) -> Result<(TokenKind<'a>, usize), LexError> {
+        let mut end = prefix_end;
+
+        let has_digits = self.consume_digits_matching(&mut end, is_valid_digit);
+        if !has_digits {
+            return Err(LexError::InvalidNumber { start, end });
+        }
+
+        let digits = &self.s[prefix_end..end];
+        let val = i64::from_str_radix(digits, radix)
+            .map_err(|_| LexError::InvalidNumber { start, end })?;
+
+        Ok((Integer { base, val }, end))
     }
 
     /// Lex an identifier or boolean keyword.
@@ -186,10 +228,11 @@ impl<'a> Lexer<'a> {
         (token, end)
     }
 
-    fn consume_digits(&mut self, end: &mut usize) -> bool {
+    /// Returns `true` if at least one character was consumed.
+    fn consume_digits_matching(&mut self, end: &mut usize, predicate: fn(char) -> bool) -> bool {
         let mut consumed = false;
         while let Some(&(idx, c)) = self.chars.peek() {
-            if c.is_ascii_digit() {
+            if predicate(c) {
                 self.chars.next();
                 *end = idx + c.len_utf8();
                 consumed = true;
@@ -198,6 +241,10 @@ impl<'a> Lexer<'a> {
             }
         }
         consumed
+    }
+
+    fn consume_digits(&mut self, end: &mut usize) -> bool {
+        self.consume_digits_matching(end, |c| c.is_ascii_digit())
     }
 
     fn consume_fraction(&mut self, end: &mut usize) -> bool {
@@ -364,6 +411,100 @@ mod tests {
 
         for (input, expected) in &cases {
             assert_token(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_integer_bases() {
+        use Base::*;
+        let cases = [
+            // Binary
+            (
+                "0b1111",
+                Integer {
+                    base: Binary,
+                    val: 0b1111,
+                },
+            ),
+            (
+                "0B1010",
+                Integer {
+                    base: Binary,
+                    val: 0b1010,
+                },
+            ),
+            // Octal
+            (
+                "0o73",
+                Integer {
+                    base: Octal,
+                    val: 0o73,
+                },
+            ),
+            (
+                "0O755",
+                Integer {
+                    base: Octal,
+                    val: 0o755,
+                },
+            ),
+            // Hexadecimal
+            (
+                "0xdead",
+                Integer {
+                    base: Hexadecimal,
+                    val: 0xdead,
+                },
+            ),
+            (
+                "0XBEEF",
+                Integer {
+                    base: Hexadecimal,
+                    val: 0xBEEF,
+                },
+            ),
+            (
+                "0x0",
+                Integer {
+                    base: Hexadecimal,
+                    val: 0,
+                },
+            ),
+        ];
+
+        for (input, expected) in &cases {
+            assert_token(input, expected);
+        }
+    }
+
+    #[test]
+    fn test_invalid_base_literals() {
+        // Missing digits after prefix
+        for input in ["0x", "0b", "0o", "0X", "0B", "0O"] {
+            let mut lexer = Lexer::new(input);
+            let result = lexer.next().unwrap();
+            assert!(
+                result.is_err(),
+                "expected error for '{input}', got {result:?}"
+            );
+        }
+
+        // Invalid digits for base
+        let invalid_cases = [
+            ("0b2", "binary with 2"),
+            ("0o8", "octal with 8"),
+            ("0o9", "octal with 9"),
+        ];
+        for (input, desc) in invalid_cases {
+            let mut lexer = Lexer::new(input);
+            // These should parse the valid prefix portion and stop,
+            // or error - depending on implementation choice.
+            // Current implementation: 0b consumes nothing after prefix → error
+            let result = lexer.next().unwrap();
+            assert!(
+                result.is_err(),
+                "expected error for {desc} ('{input}'), got {result:?}"
+            );
         }
     }
 
