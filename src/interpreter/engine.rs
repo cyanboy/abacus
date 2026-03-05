@@ -316,6 +316,13 @@ impl Env {
             (BinOp::BitOr, Int(a), Int(b)) => Int(a | b),
             (BinOp::Xor, Int(a), Int(b)) => Int(a ^ b),
 
+            (BinOp::BitShl, Int(a), Int(b)) => Int(a
+                .checked_shl(b.try_into().map_err(|_| EvalError::overflow(span))?)
+                .ok_or_else(|| EvalError::overflow(span))?),
+            (BinOp::BitShr, Int(a), Int(b)) => Int(a
+                .checked_shr(b.try_into().map_err(|_| EvalError::overflow(span))?)
+                .ok_or_else(|| EvalError::overflow(span))?),
+
             (BinOp::Eq, a, b) => Bool(val_eq(&a, &b).map_err(|e| e.with_span(span))?),
             (BinOp::Ne, a, b) => Bool(!val_eq(&a, &b).map_err(|e| e.with_span(span))?),
 
@@ -528,6 +535,44 @@ mod tests {
 
         let xor = expect_value(&mut env, binary(lit_int(10), BinOp::Xor, lit_int(15)));
         assert_eq!(xor, Value::Int(5));
+    }
+
+    #[test]
+    fn shift_ops_on_integers() {
+        let mut env = Env::new();
+
+        let shl = expect_value(&mut env, binary(lit_int(1), BinOp::BitShl, lit_int(4)));
+        assert_eq!(shl, Value::Int(16));
+
+        let shr = expect_value(&mut env, binary(lit_int(32), BinOp::BitShr, lit_int(3)));
+        assert_eq!(shr, Value::Int(4));
+    }
+
+    #[test]
+    fn shift_overflow_reports_error() {
+        let mut env = Env::new();
+        let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::BitShl, lit_int(64)))
+            .expect_err("expected overflow for shift >= 64");
+        assert!(matches!(err, EvalError::Overflow { .. }));
+    }
+
+    #[test]
+    fn shift_negative_amount_reports_error() {
+        let mut env = Env::new();
+        let err = eval_expr_stmt(&mut env, binary(lit_int(1), BinOp::BitShl, lit_int(-1)))
+            .expect_err("expected overflow for negative shift");
+        assert!(matches!(err, EvalError::Overflow { .. }));
+    }
+
+    #[test]
+    fn shift_rejects_non_integer_operands() {
+        let mut env = Env::new();
+        let err = eval_expr_stmt(
+            &mut env,
+            binary(lit_float(1.0), BinOp::BitShl, lit_int(2)),
+        )
+        .expect_err("expected type error for float shift");
+        assert!(matches!(err, EvalError::TypeError { .. }));
     }
 
     #[test]

@@ -62,6 +62,27 @@ impl<'a> Lexer<'a> {
         (one, end)
     }
 
+    #[inline]
+    fn match_triple(
+        &mut self,
+        start: usize,
+        first_len: usize,
+        a: (char, TokenKind<'a>),
+        b: (char, TokenKind<'a>),
+        fallback: TokenKind<'a>,
+    ) -> (TokenKind<'a>, usize) {
+        let end = start + first_len;
+        if let Some(&(_, c)) = self.chars.peek()
+            && (c == a.0 || c == b.0)
+        {
+            self.chars.next();
+            let end = end + c.len_utf8();
+            if c == a.0 { (a.1, end) } else { (b.1, end) }
+        } else {
+            (fallback, end)
+        }
+    }
+
     /// Core lexer step: skip ws, read one token, or return an error.
     /// Returns `None` at end of input.
     fn next_token(&mut self) -> Option<Result<Token<'a>, LexError>> {
@@ -92,11 +113,11 @@ impl<'a> Lexer<'a> {
                 Ok(Token::new(tok, Span::new(pos, end)))
             }
             '<' => {
-                let (tok, end) = self.match_dual(pos, first_len, '=', LtEq, Lt);
+                let (tok, end) = self.match_triple(pos, first_len, ('=', LtEq), ('<', BitShl), Lt);
                 Ok(Token::new(tok, Span::new(pos, end)))
             }
             '>' => {
-                let (tok, end) = self.match_dual(pos, first_len, '=', GtEq, Gt);
+                let (tok, end) = self.match_triple(pos, first_len, ('=', GtEq), ('>', BitShr), Gt);
                 Ok(Token::new(tok, Span::new(pos, end)))
             }
             '|' => {
@@ -353,6 +374,8 @@ mod tests {
             ("!=", Ne),
             ("<=", LtEq),
             (">=", GtEq),
+            ("<<", BitShl),
+            (">>", BitShr),
             ("&&", And),
             ("||", Or),
         ];

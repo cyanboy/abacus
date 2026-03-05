@@ -226,6 +226,8 @@ fn highlight_color<'a>(tokens: &[Token<'a>], index: usize) -> Option<colored::Co
         | TokenKind::Or
         | TokenKind::BitAnd
         | TokenKind::And
+        | TokenKind::BitShl
+        | TokenKind::BitShr
         | TokenKind::OpenParen
         | TokenKind::CloseParen => Some(OPERATOR_BLUE),
         _ => None,

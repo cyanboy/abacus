@@ -427,11 +427,13 @@ fn infix_bp(tok: &TokenKind) -> Option<(BinOp, u8, u8)> {
         TokenKind::LtEq => Some((LtEq, 7, 8)),
         TokenKind::Gt => Some((Gt, 7, 8)),
         TokenKind::GtEq => Some((GtEq, 7, 8)),
-        TokenKind::Plus => Some((Add, 8, 9)),
-        TokenKind::Minus => Some((Sub, 8, 9)),
-        TokenKind::Star => Some((Mul, 9, 10)),
-        TokenKind::Slash => Some((Div, 9, 10)),
-        TokenKind::Percent => Some((Mod, 9, 10)),
+        TokenKind::BitShl => Some((BitShl, 8, 9)),
+        TokenKind::BitShr => Some((BitShr, 8, 9)),
+        TokenKind::Plus => Some((Add, 9, 10)),
+        TokenKind::Minus => Some((Sub, 9, 10)),
+        TokenKind::Star => Some((Mul, 10, 11)),
+        TokenKind::Slash => Some((Div, 10, 11)),
+        TokenKind::Percent => Some((Mod, 10, 11)),
         _ => None,
     }
 }
@@ -569,9 +571,10 @@ mod tests {
         use BinOp::*;
 
         let all = [
-            And, BitAnd, Or, BitOr, Eq, Ne, Lt, LtEq, Gt, GtEq, Xor, Add, Sub, Mul, Div, Mod,
+            And, BitAnd, Or, BitOr, Eq, Ne, Lt, LtEq, Gt, GtEq, Xor, BitShl, BitShr, Add,
+            Sub, Mul, Div, Mod,
         ];
-        assert_eq!(all.len(), 16);
+        assert_eq!(all.len(), 18);
     }
 
     #[test]
@@ -754,6 +757,42 @@ mod tests {
         };
         assert_eq!(op, BinOp::BitAnd);
         assert_eq!(span, Span::new(0, 5));
+    }
+
+    #[test]
+    fn parses_shift_operators() {
+        let Expr::Binary { op, span, .. } = parse_expr("1 << 2") else {
+            panic!("expected shift left expression");
+        };
+        assert_eq!(op, BinOp::BitShl);
+        assert_eq!(span, Span::new(0, 6));
+
+        let Expr::Binary { op, span, .. } = parse_expr("1 >> 2") else {
+            panic!("expected shift right expression");
+        };
+        assert_eq!(op, BinOp::BitShr);
+        assert_eq!(span, Span::new(0, 6));
+    }
+
+    #[test]
+    fn shift_binds_tighter_than_comparison_but_looser_than_addition() {
+        let Expr::Binary { op, lhs, .. } = parse_expr("1 + 2 << 3") else {
+            panic!("expected shift expression");
+        };
+        assert_eq!(op, BinOp::BitShl);
+        assert!(matches!(*lhs, Expr::Binary { op: BinOp::Add, .. }));
+
+        let Expr::Binary { op, lhs, .. } = parse_expr("1 << 2 < 3") else {
+            panic!("expected comparison expression");
+        };
+        assert_eq!(op, BinOp::Lt);
+        assert!(matches!(
+            *lhs,
+            Expr::Binary {
+                op: BinOp::BitShl,
+                ..
+            }
+        ));
     }
 
     #[test]

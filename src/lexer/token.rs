@@ -26,6 +26,8 @@ pub enum TokenKind<'a> {
     Or,         // '||'
     BitAnd,     // '&'
     And,        // '&&'
+    BitShl,  // '<<'
+    BitShr, // '>>'
     Comma,      // ','
     OpenParen,  // '('
     CloseParen, // ')'
@@ -118,6 +120,8 @@ impl fmt::Display for TokenKind<'_> {
             Or => write!(f, "||"),
             BitAnd => write!(f, "&"),
             And => write!(f, "&&"),
+            BitShl => write!(f, "<<"),
+            BitShr => write!(f, ">>"),
             Comma => write!(f, ","),
             OpenParen => write!(f, "("),
             CloseParen => write!(f, ")"),
@@ -187,6 +191,8 @@ mod tests {
             (TokenKind::Or, "||"),
             (TokenKind::BitAnd, "&"),
             (TokenKind::And, "&&"),
+            (TokenKind::BitShl, "<<"),
+            (TokenKind::BitShr, ">>"),
             (TokenKind::Comma, ","),
             (TokenKind::OpenParen, "("),
             (TokenKind::CloseParen, ")"),

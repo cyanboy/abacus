@@ -56,6 +56,8 @@ pub enum BinOp {
     Gt,
     GtEq,
     Xor,
+    BitShl,
+    BitShr,
     Add,
     Sub,
     Mul,
