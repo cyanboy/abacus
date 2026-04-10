@@ -78,3 +78,22 @@ fn cli_script_flag_executes_file() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains('8'), "stdout missing evaluation: {stdout}");
 }
+
+#[test]
+fn cli_missing_file_reports_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_abc"))
+        .arg("--no-color")
+        .arg("/nonexistent/abacus_missing.abc")
+        .output()
+        .expect("run abc missing file");
+
+    assert!(
+        !output.status.success(),
+        "process should fail for missing file"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error while executing file"),
+        "stderr should report file error, got: {stderr}"
+    );
+}
